@@ -3254,7 +3254,7 @@
                 const response = await fetch('/api/order', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
                 const raw = await response.text();
                 let result;
-                try { result = JSON.parse(raw); } catch (_) { throw new Error('خدمة إرسال الطلب غير مفعّلة على هذا الرابط. ارفع المشروع على Vercel مع إعدادات البوت ثم جرّب مرة أخرى.'); }
+                try { result = JSON.parse(raw); } catch (_) { throw new Error('خدمة إرسال الطلب غير مفعّلة على هذا الرابط. شغّل خادم الموقع ثم جرّب مرة أخرى.'); }
                 if (!response.ok) throw new Error(result.error || 'تعذر إرسال الطلب');
                 await db.ref('orders').push({...payload, img:image, sentToTelegram:true, status:'pending', createdAt:Date.now()});
 
