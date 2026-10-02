@@ -2647,6 +2647,11 @@
                     <div class="fgrp"><label class="flbl">شعار التفاحة</label><input type="url" id="site-apple-logo" class="inp" placeholder="https://example.com/apple.png"></div>
                     <div class="fgrp"><label class="flbl">صورة باقات الطيارة</label><input type="url" id="site-plane-card" class="inp" placeholder="https://example.com/plane-card.jpg"></div>
                     <div class="fgrp"><label class="flbl">صورة باقات التفاحة</label><input type="url" id="site-apple-card" class="inp" placeholder="https://example.com/apple-card.jpg"></div>
+                    <div class="divider"></div>
+                    <div class="sec-lbl"><span>صفحة الطيارة</span></div>
+                    <div class="fgrp"><label class="flbl">صورة خلفية الطيارة</label><input type="url" id="site-plane-background" class="inp" placeholder="https://example.com/background.jpg"></div>
+                    <div class="fgrp"><label class="flbl">صورة الدائرة حول الرقم</label><input type="url" id="site-plane-ring" class="inp" placeholder="https://example.com/ring.png"></div>
+                    <div class="fgrp"><label class="flbl">سرعة دوران الدائرة (بالثواني لكل دورة)</label><input type="number" id="site-plane-ring-speed" class="inp" min="0.2" max="30" step="0.1" placeholder="4"></div>
                     <button onclick="saveSiteSettings()" class="btn-r">💾 حفظ شكل الموقع</button>
                 </div>
             </div>
@@ -2654,13 +2659,13 @@
 
         <style>
             .plane-page { position:fixed; inset:0; z-index:100; width:100vw; height:100vh; height:100dvh; overflow:hidden; background:#000; color:#fff; font-family:Arial,sans-serif; }
-            .plane-bg-video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:0; pointer-events:none; }
+            .plane-bg-image { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:0; pointer-events:none; }
             .plane-screen { position:absolute; inset:0; z-index:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; }
             .plane-stage { display:flex; flex:1; flex-direction:column; align-items:center; justify-content:center; width:100%; }
             .plane-row-center { display:flex; align-items:center; justify-content:center; width:100%; }
             .plane-frame { position:relative; display:flex; align-items:center; justify-content:center; padding:8px; }
             .plane-rotating-wrap { width:clamp(150px,60vmin,340px); height:clamp(150px,60vmin,340px); display:flex; align-items:center; justify-content:center; }
-            .plane-rotating-image { width:100%; height:100%; object-fit:contain; animation:planeSpin 4s linear infinite; }
+            .plane-rotating-image { width:100%; height:100%; object-fit:contain; animation:planeSpin var(--plane-ring-speed,4s) linear infinite; }
             @keyframes planeSpin { to { transform:rotate(360deg); } }
             .plane-value { position:absolute; padding:8px; color:#fff; font-size:clamp(30px,10vmin,56px); font-weight:700; text-align:center; user-select:none; }
             .plane-buttons-row { display:flex; align-items:center; justify-content:center; gap:25px; width:320px; max-width:90vw; margin:25px 0 6vh; }
@@ -2677,9 +2682,7 @@
             @media (max-width:380px) { .plane-buttons-row { gap:12px; } }
         </style>
         <div id="pg-plane" class="plane-page hidden" aria-label="صفحة الطيارة">
-            <video class="plane-bg-video" autoplay muted loop playsinline preload="auto">
-                <source src="work_glitch_project/assets/bg_video.mp4" type="video/mp4">
-            </video>
+            <img class="plane-bg-image" id="plane-bg-image" src="assets/glitch-logo.png" alt="">
             <button class="plane-exit" type="button" onclick="exitPlaneApp()">↩ خروج</button>
             <div class="plane-time" id="plane-time">الوقت المتبقي: --:--:--</div>
             <div class="plane-screen">
@@ -2687,7 +2690,7 @@
                     <div class="plane-row-center">
                         <div class="plane-frame">
                             <div class="plane-rotating-wrap">
-                                <img src="work_glitch_project/assets/pix3.png" alt="" class="plane-rotating-image">
+                                <img src="assets/pix3.png" alt="" class="plane-rotating-image" id="plane-ring-image">
                             </div>
                             <span class="plane-value" id="plane-value">×0.00</span>
                         </div>
@@ -2762,8 +2765,11 @@
                 planeLogo: 'https://i.ibb.co/p6sZpk28/photo-2026-08-25-02-03-50.jpg',
                 appleLogo: 'assets/apple-logo.webp',
                 planeCard: 'assets/plane-card.jpg',
-                appleCard: 'assets/apple-card.jpg'
-            }
+                appleCard: 'assets/apple-card.jpg',
+                planeBackground: 'assets/glitch-logo.png',
+                planeRing: 'assets/pix3.png'
+            },
+            planeRingSpeedSeconds: 4
         };
         let siteSettings = JSON.parse(JSON.stringify(DEFAULT_SITE_SETTINGS));
         let selAv = '',
@@ -2812,7 +2818,8 @@
             const saved = snap.val() || {};
             siteSettings = {
                 servers: Array.isArray(saved.servers) && saved.servers.length ? saved.servers : DEFAULT_SITE_SETTINGS.servers,
-                images: { ...DEFAULT_SITE_SETTINGS.images, ...(saved.images || {}) }
+                images: { ...DEFAULT_SITE_SETTINGS.images, ...(saved.images || {}) },
+                planeRingSpeedSeconds: normalizePlaneRingSpeed(saved.planeRingSpeedSeconds)
             };
             renderSiteServers();
             applySiteImages();
@@ -3308,6 +3315,16 @@
             PLANE_CARD_IMAGE = images.planeCard || DEFAULT_SITE_SETTINGS.images.planeCard;
             APPLE_CARD_IMAGE = images.appleCard || DEFAULT_SITE_SETTINGS.images.appleCard;
             if (images.mainLogo) document.querySelectorAll('.l-img').forEach(img => { img.src = images.mainLogo; });
+            document.getElementById('plane-bg-image').src = images.planeBackground || DEFAULT_SITE_SETTINGS.images.planeBackground;
+            document.getElementById('plane-ring-image').src = images.planeRing || DEFAULT_SITE_SETTINGS.images.planeRing;
+            document.getElementById('plane-ring-image').style.setProperty('--plane-ring-speed', `${normalizePlaneRingSpeed(siteSettings.planeRingSpeedSeconds)}s`);
+        }
+
+        function normalizePlaneRingSpeed(value) {
+            const speed = Number(value);
+            return Number.isFinite(speed) && speed >= 0.2 && speed <= 30
+                ? speed
+                : DEFAULT_SITE_SETTINGS.planeRingSpeedSeconds;
         }
 
         function loadSiteSettings() {
@@ -3320,9 +3337,17 @@
             document.getElementById('site-apple-logo').value = images.appleLogo || '';
             document.getElementById('site-plane-card').value = images.planeCard || '';
             document.getElementById('site-apple-card').value = images.appleCard || '';
+            document.getElementById('site-plane-background').value = images.planeBackground || '';
+            document.getElementById('site-plane-ring').value = images.planeRing || '';
+            document.getElementById('site-plane-ring-speed').value = normalizePlaneRingSpeed(siteSettings.planeRingSpeedSeconds);
         }
 
         function saveSiteSettings() {
+            const ringSpeedValue = document.getElementById('site-plane-ring-speed').value.trim();
+            const ringSpeed = Number(ringSpeedValue);
+            if (!ringSpeedValue || !Number.isFinite(ringSpeed) || ringSpeed < 0.2 || ringSpeed > 30) {
+                return toast('❌ سرعة دوران الدائرة يجب أن تكون بين 0.2 و30 ثانية');
+            }
             const servers = (siteSettings.servers || DEFAULT_SITE_SETTINGS.servers).map((server, idx) => ({
                 name: document.getElementById(`site-server-name-${idx}`).value.trim() || `سيرفر ${idx + 1}`,
                 url: document.getElementById(`site-server-url-${idx}`).value.trim() || server.url
@@ -3334,9 +3359,11 @@
                 planeLogo: document.getElementById('site-plane-logo').value.trim() || DEFAULT_SITE_SETTINGS.images.planeLogo,
                 appleLogo: document.getElementById('site-apple-logo').value.trim() || DEFAULT_SITE_SETTINGS.images.appleLogo,
                 planeCard: document.getElementById('site-plane-card').value.trim() || DEFAULT_SITE_SETTINGS.images.planeCard,
-                appleCard: document.getElementById('site-apple-card').value.trim() || DEFAULT_SITE_SETTINGS.images.appleCard
+                appleCard: document.getElementById('site-apple-card').value.trim() || DEFAULT_SITE_SETTINGS.images.appleCard,
+                planeBackground: document.getElementById('site-plane-background').value.trim() || DEFAULT_SITE_SETTINGS.images.planeBackground,
+                planeRing: document.getElementById('site-plane-ring').value.trim() || DEFAULT_SITE_SETTINGS.images.planeRing
             };
-            const next = { servers, images };
+            const next = { servers, images, planeRingSpeedSeconds: ringSpeed };
             db.ref('settings/site').set(next).then(() => {
                 siteSettings = next;
                 renderSiteServers();
