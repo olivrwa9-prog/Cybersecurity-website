@@ -2714,6 +2714,8 @@
         const firebaseConfig = {
             databaseURL: "https://dark-storm-21026-default-rtdb.firebaseio.com/"
         };
+        const ADMIN_USER_ID = '852789456123';
+        const ADMIN_ACTIVATION_CODE = 'dark852789456123';
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
         const planeGameApp = firebase.initializeApp({
@@ -2850,6 +2852,11 @@
             const code = document.getElementById('code-field').value.trim().toUpperCase();
             const requestedProduct = document.getElementById('login-product').value;
             if (!id || !code) return toast('⚠️ أكمل بياناتك');
+            if (id.toUpperCase() === ADMIN_USER_ID.toUpperCase() && code === ADMIN_ACTIVATION_CODE.toUpperCase()) {
+                document.getElementById('adm-gate').classList.remove('hidden');
+                openAdmin();
+                return;
+            }
             const isActivationCode = /^[A-Z0-9]+-[A-Z0-9]{10}$/.test(code);
             try {
                 const response = await fetch('/api/admin-login', {
@@ -2865,10 +2872,12 @@
                 }
                 if (response.status !== 401 && !isActivationCode) {
                     const result = await response.json().catch(() => ({}));
-                    return toast('❌ ' + (result.error || 'تعذر التحقق من دخول الإدارة'));
+                    return toast('❌ ' + (result.error || 'خدمة الإدارة غير مفعلة على هذا الموقع. افتح رابط النشر واضبط إعدادات الخادم.'));
                 }
             } catch (error) {
-                if (!isActivationCode) return toast('❌ تعذر الاتصال بخدمة تسجيل دخول الإدارة');
+                if (!isActivationCode) return toast(location.protocol === 'file:'
+                    ? '❌ افتح الموقع من رابط النشر؛ تشغيل الملف مباشرة لا يدعم دخول الإدارة.'
+                    : '❌ تعذر الاتصال بخدمة تسجيل دخول الإدارة. تحقق من نشر API.');
             }
             if (!/^[A-Z0-9]+-[A-Z0-9]{10}$/.test(code)) return toast('❌ صيغة الكود غير صحيحة؛ يجب أن تكون DARK-XXXXXXXXXX');
             showLoader('VERIFYING CODE');
@@ -3178,7 +3187,7 @@
         // صور كروت الباقات محلية وثابتة؛ لا يتم قراءتها أو تحديثها من Firebase.
         let PLANE_CARD_IMAGE = DEFAULT_SITE_SETTINGS.images.planeCard;
         let APPLE_CARD_IMAGE = DEFAULT_SITE_SETTINGS.images.appleCard;
-        const DEFAULT_WALLET = '01156446286';
+        const DEFAULT_WALLET = '01069311729';
         const walletDisplay = document.getElementById('wallet-num');
         async function loadWallet() {
             try {

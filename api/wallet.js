@@ -2,7 +2,7 @@ import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getDatabase } from 'firebase-admin/database';
 import { isSameOrigin, verifyAdminSession } from './_lib/admin-auth.js';
 
-const DEFAULT_WALLET = '01156446286';
+const DEFAULT_WALLET = '01069311729';
 
 function walletRef() {
     const credentials = String(process.env.FIREBASE_SERVICE_ACCOUNT || '');
