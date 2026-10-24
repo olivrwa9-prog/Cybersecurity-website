@@ -2719,14 +2719,23 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
         let serverTimeOffset = 0;
+        let resolveServerTime;
+        const serverTimeReady = new Promise(resolve => {
+            resolveServerTime = resolve;
+        });
         const serverTimeOffsetRef = db.ref('.info/serverTimeOffset');
-        const serverTimeReady = serverTimeOffsetRef.once('value').then(snapshot => {
-            const offset = Number(snapshot.val());
-            if (Number.isFinite(offset)) serverTimeOffset = offset;
-        }).catch(() => {});
         serverTimeOffsetRef.on('value', snapshot => {
             const offset = Number(snapshot.val());
             if (Number.isFinite(offset)) serverTimeOffset = offset;
+        });
+        db.ref('.info/connected').on('value', snapshot => {
+            if (!snapshot.val()) return;
+            serverTimeOffsetRef.once('value').then(offsetSnapshot => {
+                const offset = Number(offsetSnapshot.val());
+                if (!Number.isFinite(offset)) return;
+                serverTimeOffset = offset;
+                resolveServerTime();
+            }).catch(() => {});
         });
 
         function serverNow() {
@@ -3442,7 +3451,7 @@
                 list.innerHTML = '';
                 snap.forEach(c => {
                     const k = c.val();
-                    const v = new Date(k.expiry) > new Date();
+                    const v = new Date(k.expiry).getTime() > serverNow();
                     const productLabel = k.product === 'plane' ? '✈️ الطيارة' : '🍎 التفاحة';
                     const expiryTime = new Date(k.expiry).getTime();
                     const expiryTimestamp = Number.isFinite(expiryTime) ? expiryTime : '';

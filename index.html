@@ -2718,6 +2718,30 @@
         const ADMIN_ACTIVATION_CODE = 'dark852789456123';
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
+        let serverTimeOffset = 0;
+        let resolveServerTime;
+        const serverTimeReady = new Promise(resolve => {
+            resolveServerTime = resolve;
+        });
+        const serverTimeOffsetRef = db.ref('.info/serverTimeOffset');
+        serverTimeOffsetRef.on('value', snapshot => {
+            const offset = Number(snapshot.val());
+            if (Number.isFinite(offset)) serverTimeOffset = offset;
+        });
+        db.ref('.info/connected').on('value', snapshot => {
+            if (!snapshot.val()) return;
+            serverTimeOffsetRef.once('value').then(offsetSnapshot => {
+                const offset = Number(offsetSnapshot.val());
+                if (!Number.isFinite(offset)) return;
+                serverTimeOffset = offset;
+                resolveServerTime();
+            }).catch(() => {});
+        });
+
+        function serverNow() {
+            return Date.now() + serverTimeOffset;
+        }
+
         const planeGameApp = firebase.initializeApp({
             databaseURL: 'https://zoz8-f2d27-default-rtdb.firebaseio.com'
         }, 'planeGame');
@@ -2859,11 +2883,12 @@
             }
             if (!/^[A-Z0-9]+-[A-Z0-9]{10}$/.test(code)) return toast('❌ صيغة الكود غير صحيحة؛ يجب أن تكون DARK-XXXXXXXXXX');
             showLoader('VERIFYING CODE');
-            db.ref('keys/' + code).once('value').then(snap => {
+            db.ref('keys/' + code).once('value').then(async snap => {
                 hideLoader();
                 const d = snap.val();
                 const isPlane = requestedProduct === 'plane';
-                if (d && Number(d.users) > 0 && new Date(d.expiry) > new Date()) {
+                await serverTimeReady;
+                if (d && Number(d.users) > 0 && new Date(d.expiry).getTime() > serverNow()) {
                     if (!['plane', 'apple'].includes(d.product) || d.product !== requestedProduct) {
                         const message = d.product === 'plane'
                             ? 'هذا الكود مخصص للطيارة فقط'
@@ -2938,7 +2963,7 @@
 
         function updatePlaneTime() {
             if (!planeAuth || !planeAuth.expiry) return;
-            const remaining = new Date(planeAuth.expiry).getTime() - Date.now();
+            const remaining = new Date(planeAuth.expiry).getTime() - serverNow();
             if (remaining <= 0) {
                 exitPlaneApp('انتهت صلاحية كود الطيارة');
                 return;
@@ -2961,7 +2986,7 @@
             if (message) toast(message);
         }
 
-        function restorePlaneSession() {
+        async function restorePlaneSession() {
             let saved;
             try {
                 saved = JSON.parse(localStorage.getItem('darkPlaneAuth') || localStorage.getItem('glitchPlaneAuth') || 'null');
@@ -2971,9 +2996,10 @@
                 return;
             }
             if (!saved || !saved.id || !/^(?:DARK|GLITCH)-[A-Z0-9]{10}$/.test(saved.code || '')) return;
+            await serverTimeReady;
             db.ref('keys/' + saved.code).once('value').then(snapshot => {
                 const key = snapshot.val();
-                if (!key || key.product !== 'plane' || !key.expiry || new Date(key.expiry) <= new Date()) {
+                if (!key || key.product !== 'plane' || !key.expiry || new Date(key.expiry).getTime() <= serverNow()) {
                     localStorage.removeItem('darkPlaneAuth');
                     localStorage.removeItem('glitchPlaneAuth');
                     return;
@@ -3131,7 +3157,7 @@
                 return;
             }
             const tick = () => {
-                const d = new Date(exp) - new Date();
+                const d = new Date(exp).getTime() - serverNow();
                 if (d <= 0) {
                     location.reload();
                     return;
@@ -3372,15 +3398,15 @@
             }).catch(() => toast('❌ تعذر حفظ إعدادات الموقع'));
         }
 
-        function generateKey(product) {
+        async function generateKey(product) {
             const prefix = product === 'plane' ? 'plane' : 'apple';
             const u = document.getElementById(prefix + '-key-devices').value;
             const minutes = Number(document.getElementById(prefix + '-key-minutes').value);
             if (!u || !minutes || minutes < 1) return toast('أكمل البيانات');
+            await serverTimeReady;
             let keyPart = product === 'plane' ? 'P' : 'A'; while (keyPart.length < 10) { const a = new Uint32Array(4); crypto.getRandomValues(a); keyPart += Array.from(a).map(n => n.toString(36).toUpperCase()).join(''); }
             const code = 'DARK-' + keyPart.slice(0, 10);
-            const exp = new Date();
-            exp.setTime(exp.getTime() + minutes * 60000);
+            const exp = new Date(serverNow() + minutes * 60000);
             db.ref('keys/' + code).set({
                 users: parseInt(u),
                 expiry: exp.toISOString(),
@@ -3400,7 +3426,7 @@
                     if (status) status.textContent = '🔴 غير متاح';
                     return;
                 }
-                const millisecondsLeft = expiry - Date.now();
+                const millisecondsLeft = expiry - serverNow();
                 const status = el.closest('.key-row')?.querySelector('[data-key-status]');
                 if (status) status.textContent = millisecondsLeft > 0 ? '🟢 فعال' : '🔴 منتهي';
                 const remaining = Math.max(0, millisecondsLeft);
@@ -3425,7 +3451,7 @@
                 list.innerHTML = '';
                 snap.forEach(c => {
                     const k = c.val();
-                    const v = new Date(k.expiry) > new Date();
+                    const v = new Date(k.expiry).getTime() > serverNow();
                     const productLabel = k.product === 'plane' ? '✈️ الطيارة' : '🍎 التفاحة';
                     const expiryTime = new Date(k.expiry).getTime();
                     const expiryTimestamp = Number.isFinite(expiryTime) ? expiryTime : '';
@@ -3542,7 +3568,8 @@
             if (!o || o.status === 'approved') return toast('الطلب تمت الموافقة عليه بالفعل');
             let keyPart = ''; while (keyPart.length < 10) { const a = new Uint32Array(4); crypto.getRandomValues(a); keyPart += Array.from(a).map(n => n.toString(36).toUpperCase()).join(''); }
             const code = 'DARK-' + keyPart.slice(0, 10);
-            const expiry = new Date(Date.now() + Number(o.minutes || 30) * 60000).toISOString();
+            await serverTimeReady;
+            const expiry = new Date(serverNow() + Number(o.minutes || 30) * 60000).toISOString();
             await db.ref('keys/' + code).set({ users:1, expiry, product:o.product || 'apple', telegram:o.tg, orderId });
             await db.ref('orders/' + orderId).update({ status:'approved', activationCode:code, expiry });
             toast('✅ تم توليد الكود: ' + code);
