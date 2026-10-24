@@ -1,8 +1,6 @@
 {
-  "name": "dark-storm-vip",
-  "private": true,
   "type": "module",
-  "scripts": {
-    "start": "node server.mjs"
+  "dependencies": {
+    "firebase-admin": "^13.0.0"
   }
 }

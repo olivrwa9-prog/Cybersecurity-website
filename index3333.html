@@ -1819,13 +1819,18 @@
 
         .ph-num {
             font-family: 'Orbitron', monospace;
-            font-size: 1.4rem;
+            font-size: clamp(1rem, 5vw, 1.5rem);
             font-weight: 900;
-            background: linear-gradient(90deg, var(--gold2), var(--gold));
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-            letter-spacing: 2px;
+            color: #ffe08a;
+            background: rgba(0, 0, 0, .32);
+            border: 1px solid rgba(255, 224, 138, .45);
+            border-radius: 12px;
+            padding: 10px 14px;
+            letter-spacing: 1px;
+            line-height: 1.5;
+            min-width: 0;
+            overflow-wrap: anywhere;
+            text-shadow: 0 0 12px rgba(255, 224, 138, .35);
             user-select: all;
         }
 
@@ -2706,34 +2711,8 @@
         const firebaseConfig = {
             databaseURL: "https://dark-storm-21026-default-rtdb.firebaseio.com/"
         };
-        const ADMIN_USER_ID = '852789456123';
-        const ADMIN_ACTIVATION_CODE = 'dark852789456123';
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
-        let serverTimeOffset = 0;
-        let resolveServerTime;
-        const serverTimeReady = new Promise(resolve => {
-            resolveServerTime = resolve;
-        });
-        const serverTimeOffsetRef = db.ref('.info/serverTimeOffset');
-        serverTimeOffsetRef.on('value', snapshot => {
-            const offset = Number(snapshot.val());
-            if (Number.isFinite(offset)) serverTimeOffset = offset;
-        });
-        db.ref('.info/connected').on('value', snapshot => {
-            if (!snapshot.val()) return;
-            serverTimeOffsetRef.once('value').then(offsetSnapshot => {
-                const offset = Number(offsetSnapshot.val());
-                if (!Number.isFinite(offset)) return;
-                serverTimeOffset = offset;
-                resolveServerTime();
-            }).catch(() => {});
-        });
-
-        function serverNow() {
-            return Date.now() + serverTimeOffset;
-        }
-
         const planeGameApp = firebase.initializeApp({
             databaseURL: 'https://zoz8-f2d27-default-rtdb.firebaseio.com'
         }, 'planeGame');
@@ -2864,19 +2843,33 @@
             const code = document.getElementById('code-field').value.trim().toUpperCase();
             const requestedProduct = document.getElementById('login-product').value;
             if (!id || !code) return toast('⚠️ أكمل بياناتك');
-            if (id.toUpperCase() === String(ADMIN_USER_ID).trim().toUpperCase() && code === String(ADMIN_ACTIVATION_CODE).trim().toUpperCase()) {
-                document.getElementById('adm-gate').classList.remove('hidden');
-                openAdmin();
-                return;
+            const isActivationCode = /^[A-Z0-9]+-[A-Z0-9]{10}$/.test(code);
+            try {
+                const response = await fetch('/api/admin-login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ id, code })
+                });
+                if (response.ok) {
+                    document.getElementById('adm-gate').classList.remove('hidden');
+                    openAdmin();
+                    return;
+                }
+                if (response.status !== 401 && !isActivationCode) {
+                    const result = await response.json().catch(() => ({}));
+                    return toast('❌ ' + (result.error || 'تعذر التحقق من دخول الإدارة'));
+                }
+            } catch (error) {
+                if (!isActivationCode) return toast('❌ تعذر الاتصال بخدمة تسجيل دخول الإدارة');
             }
             if (!/^[A-Z0-9]+-[A-Z0-9]{10}$/.test(code)) return toast('❌ صيغة الكود غير صحيحة؛ يجب أن تكون DARK-XXXXXXXXXX');
             showLoader('VERIFYING CODE');
-            db.ref('keys/' + code).once('value').then(async snap => {
+            db.ref('keys/' + code).once('value').then(snap => {
                 hideLoader();
                 const d = snap.val();
                 const isPlane = requestedProduct === 'plane';
-                await serverTimeReady;
-                if (d && Number(d.users) > 0 && new Date(d.expiry).getTime() > serverNow()) {
+                if (d && Number(d.users) > 0 && new Date(d.expiry) > new Date()) {
                     if (!['plane', 'apple'].includes(d.product) || d.product !== requestedProduct) {
                         const message = d.product === 'plane'
                             ? 'هذا الكود مخصص للطيارة فقط'
@@ -2951,7 +2944,7 @@
 
         function updatePlaneTime() {
             if (!planeAuth || !planeAuth.expiry) return;
-            const remaining = new Date(planeAuth.expiry).getTime() - serverNow();
+            const remaining = new Date(planeAuth.expiry).getTime() - Date.now();
             if (remaining <= 0) {
                 exitPlaneApp('انتهت صلاحية كود الطيارة');
                 return;
@@ -2974,7 +2967,7 @@
             if (message) toast(message);
         }
 
-        async function restorePlaneSession() {
+        function restorePlaneSession() {
             let saved;
             try {
                 saved = JSON.parse(localStorage.getItem('darkPlaneAuth') || localStorage.getItem('glitchPlaneAuth') || 'null');
@@ -2984,10 +2977,9 @@
                 return;
             }
             if (!saved || !saved.id || !/^(?:DARK|GLITCH)-[A-Z0-9]{10}$/.test(saved.code || '')) return;
-            await serverTimeReady;
             db.ref('keys/' + saved.code).once('value').then(snapshot => {
                 const key = snapshot.val();
-                if (!key || key.product !== 'plane' || !key.expiry || new Date(key.expiry).getTime() <= serverNow()) {
+                if (!key || key.product !== 'plane' || !key.expiry || new Date(key.expiry) <= new Date()) {
                     localStorage.removeItem('darkPlaneAuth');
                     localStorage.removeItem('glitchPlaneAuth');
                     return;
@@ -3145,7 +3137,7 @@
                 return;
             }
             const tick = () => {
-                const d = new Date(exp).getTime() - serverNow();
+                const d = new Date(exp) - new Date();
                 if (d <= 0) {
                     location.reload();
                     return;
@@ -3180,6 +3172,19 @@
         let PLANE_CARD_IMAGE = DEFAULT_SITE_SETTINGS.images.planeCard;
         let APPLE_CARD_IMAGE = DEFAULT_SITE_SETTINGS.images.appleCard;
         const DEFAULT_WALLET = '01156446286';
+        const walletDisplay = document.getElementById('wallet-num');
+        async function loadWallet() {
+            try {
+                const response = await fetch('/api/wallet', { cache: 'no-store' });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || 'تعذر تحميل رقم المحفظة');
+                if (walletDisplay) walletDisplay.innerText = result.wallet || DEFAULT_WALLET;
+            } catch (error) {
+                if (walletDisplay) walletDisplay.innerText = DEFAULT_WALLET;
+                console.error('تعذر تحميل رقم المحفظة:', error);
+            }
+        }
+        loadWallet();
         let selectedProduct = null;
         let packageCatalog = PLANE_PACKAGES.slice();
         let appleCatalog = APPLE_PACKAGES.slice();
@@ -3250,9 +3255,7 @@
             showPage('pg-pay');
             document.getElementById('selected-package').innerText = `${selectedProduct === 'plane' ? '✈️ الطيارة' : '🍎 التفاحة'} · ${p.name} · ${p.price} EGP`;
             document.getElementById('order-state').classList.add('hidden');
-            db.ref('settings/wallet').once('value').then(snap => {
-                document.getElementById('wallet-num').innerText = snap.val() || DEFAULT_WALLET;
-            });
+            loadWallet();
         }
         function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
         async function sendOrder() {
@@ -3366,15 +3369,15 @@
             }).catch(() => toast('❌ تعذر حفظ إعدادات الموقع'));
         }
 
-        async function generateKey(product) {
+        function generateKey(product) {
             const prefix = product === 'plane' ? 'plane' : 'apple';
             const u = document.getElementById(prefix + '-key-devices').value;
             const minutes = Number(document.getElementById(prefix + '-key-minutes').value);
             if (!u || !minutes || minutes < 1) return toast('أكمل البيانات');
-            await serverTimeReady;
             let keyPart = product === 'plane' ? 'P' : 'A'; while (keyPart.length < 10) { const a = new Uint32Array(4); crypto.getRandomValues(a); keyPart += Array.from(a).map(n => n.toString(36).toUpperCase()).join(''); }
             const code = 'DARK-' + keyPart.slice(0, 10);
-            const exp = new Date(serverNow() + minutes * 60000);
+            const exp = new Date();
+            exp.setTime(exp.getTime() + minutes * 60000);
             db.ref('keys/' + code).set({
                 users: parseInt(u),
                 expiry: exp.toISOString(),
@@ -3394,7 +3397,7 @@
                     if (status) status.textContent = '🔴 غير متاح';
                     return;
                 }
-                const millisecondsLeft = expiry - serverNow();
+                const millisecondsLeft = expiry - Date.now();
                 const status = el.closest('.key-row')?.querySelector('[data-key-status]');
                 if (status) status.textContent = millisecondsLeft > 0 ? '🟢 فعال' : '🔴 منتهي';
                 const remaining = Math.max(0, millisecondsLeft);
@@ -3419,7 +3422,7 @@
                 list.innerHTML = '';
                 snap.forEach(c => {
                     const k = c.val();
-                    const v = new Date(k.expiry).getTime() > serverNow();
+                    const v = new Date(k.expiry) > new Date();
                     const productLabel = k.product === 'plane' ? '✈️ الطيارة' : '🍎 التفاحة';
                     const expiryTime = new Date(k.expiry).getTime();
                     const expiryTimestamp = Number.isFinite(expiryTime) ? expiryTime : '';
@@ -3536,8 +3539,7 @@
             if (!o || o.status === 'approved') return toast('الطلب تمت الموافقة عليه بالفعل');
             let keyPart = ''; while (keyPart.length < 10) { const a = new Uint32Array(4); crypto.getRandomValues(a); keyPart += Array.from(a).map(n => n.toString(36).toUpperCase()).join(''); }
             const code = 'DARK-' + keyPart.slice(0, 10);
-            await serverTimeReady;
-            const expiry = new Date(serverNow() + Number(o.minutes || 30) * 60000).toISOString();
+            const expiry = new Date(Date.now() + Number(o.minutes || 30) * 60000).toISOString();
             await db.ref('keys/' + code).set({ users:1, expiry, product:o.product || 'apple', telegram:o.tg, orderId });
             await db.ref('orders/' + orderId).update({ status:'approved', activationCode:code, expiry });
             toast('✅ تم توليد الكود: ' + code);
@@ -3546,11 +3548,24 @@
             db.ref('orders/' + id).remove();
         }
 
-        function updateWallet() {
+        async function updateWallet() {
             const w = document.getElementById('new-wallet').value.trim();
             if (!w) return toast('ادخل الرقم');
-            db.ref('settings/wallet').set(w);
-            toast('✅ تم التحديث');
+            try {
+                const response = await fetch('/api/wallet', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ wallet: w })
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || 'تعذر تحديث رقم المحفظة');
+                if (walletDisplay) walletDisplay.innerText = result.wallet;
+                toast('✅ تم التحديث');
+            } catch (error) {
+                console.error('تعذر تحديث رقم المحفظة:', error);
+                toast('❌ ' + error.message);
+            }
         }
 
         function copyWallet() {
