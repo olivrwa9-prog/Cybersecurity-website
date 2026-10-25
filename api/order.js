@@ -24,7 +24,7 @@ export default async function handler(req, res) {
     const token = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
     const chatId = String(process.env.TELEGRAM_CHAT_ID || '').trim();
     if (!token || !chatId) {
-      return res.status(500).json({ error: 'إعدادات البوت غير مضافة على Vercel' });
+      return res.status(500).json({ error: 'إعدادات البوت غير مضافة على الخادم. أضف TELEGRAM_BOT_TOKEN وTELEGRAM_CHAT_ID إلى ملف .env' });
     }
 
     const dataUrl = screenshot.trim();

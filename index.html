@@ -3401,7 +3401,14 @@
             try {
                 const image = await readOrderImage(f);
                 const payload = { tg, num, item:curItem.n, price:curItem.p, minutes:curItem.minutes, product:curItem.product, screenshot:image };
-                await db.ref('orders').push({...payload, img:image, sentToTelegram:false, status:'pending', createdAt:Date.now()});
+                const response = await fetch('/api/order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(result.error || 'تعذر إرسال الطلب إلى تيليجرام');
+                await db.ref('orders').push({...payload, img:image, sentToTelegram:true, status:'pending', createdAt:Date.now()});
                 hideLoader();
                 document.getElementById('order-state').classList.remove('hidden');
                 document.getElementById('order-state').innerHTML = '✅ تم حفظ الطلب، انتظر تفعيل الأدمن';
