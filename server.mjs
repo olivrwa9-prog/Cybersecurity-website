@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import orderHandler from './api/order.js';
+import approveHandler from './api/approve.js';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const maxBodyBytes = 6 * 1024 * 1024;
@@ -19,7 +20,7 @@ const mimeTypes = {
   '.webp': 'image/webp',
   '.woff2': 'font/woff2'
 };
-const apiHandlers = new Map([['/api/order', orderHandler]]);
+const apiHandlers = new Map([['/api/order', orderHandler], ['/api/approve', approveHandler]]);
 
 async function loadEnvironment() {
   let contents;
@@ -145,6 +146,6 @@ const server = createServer(async (request, response) => {
 });
 
 const port = Number(process.env.PORT) || 3000;
-server.listen(port, '127.0.0.1', () => {
+server.listen(port, '0.0.0.0', () => {
   console.log(`Dark Storm is running at http://127.0.0.1:${port}`);
 });

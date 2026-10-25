@@ -3191,6 +3191,7 @@
             });
         }
         loadWallet();
+        restorePlaneSession().catch(() => {});
         db.ref('settings/site').once('value').then(snapshot => {
             const saved = snapshot.val() || {};
             siteSettings = {
@@ -3667,6 +3668,7 @@
             const expiry = new Date(serverNow() + Number(o.minutes || 30) * 60000).toISOString();
             await db.ref('keys/' + code).set({ users:1, expiry, product:o.product || 'apple', telegram:o.tg, orderId });
             await db.ref('orders/' + orderId).update({ status:'approved', activationCode:code, expiry });
+            try { await fetch('/api/approve', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ orderId, tg:o.tg, num:o.num, item:o.item, price:o.price, minutes:o.minutes, product:o.product||'apple', code, expiry }) }); } catch(_) {}
             toast('✅ تم توليد الكود: ' + code);
         }
         function delOrder(id) {
