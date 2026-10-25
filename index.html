@@ -5,8 +5,6 @@
     <meta name="color-scheme" content="dark">
     <meta name="supported-color-schemes" content="dark">
     <title>Dark Storm VIP</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com/">
-    <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin="">
     <style>/* arabic */
 @font-face {
   font-family: 'Cairo';
@@ -2642,15 +2640,15 @@
                     <div id="site-servers-list"></div>
                     <div class="divider"></div>
                     <div class="sec-lbl"><span>صور الموقع</span></div>
-                    <div class="fgrp"><label class="flbl">الصورة الرئيسية</label><input type="url" id="site-main-logo" class="inp" placeholder="https://example.com/logo.png"></div>
-                    <div class="fgrp"><label class="flbl">شعار الطيارة</label><input type="url" id="site-plane-logo" class="inp" placeholder="https://example.com/plane.png"></div>
-                    <div class="fgrp"><label class="flbl">شعار التفاحة</label><input type="url" id="site-apple-logo" class="inp" placeholder="https://example.com/apple.png"></div>
-                    <div class="fgrp"><label class="flbl">صورة باقات الطيارة</label><input type="url" id="site-plane-card" class="inp" placeholder="https://example.com/plane-card.jpg"></div>
-                    <div class="fgrp"><label class="flbl">صورة باقات التفاحة</label><input type="url" id="site-apple-card" class="inp" placeholder="https://example.com/apple-card.jpg"></div>
+                    <div class="fgrp"><label class="flbl">الصورة الرئيسية</label><input type="file" id="site-main-logo" class="inp" accept="image/*"><img id="site-main-logo-preview" class="site-image-preview hidden" alt="معاينة الصورة الرئيسية"></div>
+                    <div class="fgrp"><label class="flbl">شعار الطيارة</label><input type="file" id="site-plane-logo" class="inp" accept="image/*"><img id="site-plane-logo-preview" class="site-image-preview hidden" alt="معاينة شعار الطيارة"></div>
+                    <div class="fgrp"><label class="flbl">شعار التفاحة</label><input type="file" id="site-apple-logo" class="inp" accept="image/*"><img id="site-apple-logo-preview" class="site-image-preview hidden" alt="معاينة شعار التفاحة"></div>
+                    <div class="fgrp"><label class="flbl">صورة باقات الطيارة</label><input type="file" id="site-plane-card" class="inp" accept="image/*"><img id="site-plane-card-preview" class="site-image-preview hidden" alt="معاينة صورة باقات الطيارة"></div>
+                    <div class="fgrp"><label class="flbl">صورة باقات التفاحة</label><input type="file" id="site-apple-card" class="inp" accept="image/*"><img id="site-apple-card-preview" class="site-image-preview hidden" alt="معاينة صورة باقات التفاحة"></div>
                     <div class="divider"></div>
                     <div class="sec-lbl"><span>صفحة الطيارة</span></div>
-                    <div class="fgrp"><label class="flbl">صورة خلفية الطيارة</label><input type="url" id="site-plane-background" class="inp" placeholder="https://example.com/background.jpg"></div>
-                    <div class="fgrp"><label class="flbl">صورة الدائرة حول الرقم</label><input type="url" id="site-plane-ring" class="inp" placeholder="https://example.com/ring.png"></div>
+                    <div class="fgrp"><label class="flbl">صورة خلفية الطيارة</label><input type="file" id="site-plane-background" class="inp" accept="image/*"><img id="site-plane-background-preview" class="site-image-preview hidden" alt="معاينة خلفية الطيارة"></div>
+                    <div class="fgrp"><label class="flbl">صورة الدائرة حول الرقم</label><input type="file" id="site-plane-ring" class="inp" accept="image/*"><img id="site-plane-ring-preview" class="site-image-preview hidden" alt="معاينة دائرة الرقم"></div>
                     <div class="fgrp"><label class="flbl">سرعة دوران الدائرة (بالثواني لكل دورة)</label><input type="number" id="site-plane-ring-speed" class="inp" min="0.2" max="30" step="0.1" placeholder="4"></div>
                     <button onclick="saveSiteSettings()" class="btn-r">💾 حفظ شكل الموقع</button>
                 </div>
@@ -2658,6 +2656,7 @@
         </div>
 
         <style>
+            .site-image-preview { display:block; width:100%; max-width:240px; max-height:140px; margin-top:8px; object-fit:contain; border:1px solid rgba(255,255,255,.12); border-radius:6px; background:rgba(0,0,0,.2); }
             .plane-page { position:fixed; inset:0; z-index:100; width:100vw; height:100vh; height:100dvh; overflow:hidden; background:#000; color:#fff; font-family:Arial,sans-serif; }
             .plane-bg-image { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:0; pointer-events:none; }
             .plane-screen { position:absolute; inset:0; z-index:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; }
@@ -2710,33 +2709,115 @@
     <!-- /app -->
 
     <script>
-        /* ══════════ FIREBASE ══════════ */
-        const firebaseConfig = {
-            databaseURL: "https://dark-storm-21026-default-rtdb.firebaseio.com/"
-        };
+        /* ══════════ LOCAL DATA ══════════ */
+        const LOCAL_DATA_KEY = 'darkstorm_local_database_v1';
         const ADMIN_USER_ID = '852789456123';
         const ADMIN_ACTIVATION_CODE = 'dark852789456123';
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.database();
-        let serverTimeOffset = 0;
-        const serverTimeOffsetRef = db.ref('.info/serverTimeOffset');
-        const serverTimeReady = serverTimeOffsetRef.once('value').then(snapshot => {
-            const offset = Number(snapshot.val());
-            if (Number.isFinite(offset)) serverTimeOffset = offset;
-        }).catch(() => {});
-        serverTimeOffsetRef.on('value', snapshot => {
-            const offset = Number(snapshot.val());
-            if (Number.isFinite(offset)) serverTimeOffset = offset;
-        });
+        const serverTimeReady = Promise.resolve();
+        const serverNow = () => Date.now();
+        let localDatabase = {};
+        const localDatabaseListeners = new Set();
 
-        function serverNow() {
-            return Date.now() + serverTimeOffset;
+        try {
+            localDatabase = JSON.parse(localStorage.getItem(LOCAL_DATA_KEY) || '{}');
+        } catch (error) {
+            localDatabase = {};
         }
 
-        const planeGameApp = firebase.initializeApp({
-            databaseURL: 'https://zoz8-f2d27-default-rtdb.firebaseio.com'
-        }, 'planeGame');
-        const planeFeed = planeGameApp.database().ref('pre');
+        function localPathParts(path) {
+            return String(path || '').split('/').filter(Boolean);
+        }
+
+        function localRead(path) {
+            return localPathParts(path).reduce((value, part) => value?.[part], localDatabase);
+        }
+
+        function localSnapshot(path, value = localRead(path)) {
+            const parts = localPathParts(path);
+            return {
+                key: parts[parts.length - 1] || null,
+                val: () => value === undefined ? null : value,
+                exists: () => value !== undefined && value !== null,
+                forEach(callback) {
+                    if (!value || typeof value !== 'object') return false;
+                    for (const [key, childValue] of Object.entries(value)) {
+                        if (callback(localSnapshot(`${path}/${key}`, childValue)) === true) return true;
+                    }
+                    return false;
+                }
+            };
+        }
+
+        function localPersist() {
+            localStorage.setItem(LOCAL_DATA_KEY, JSON.stringify(localDatabase));
+        }
+
+        function localNotify(changedPath) {
+            for (const listener of localDatabaseListeners) {
+                const overlaps = listener.path === changedPath || listener.path.startsWith(`${changedPath}/`) || changedPath.startsWith(`${listener.path}/`);
+                if (overlaps && listener.event === 'value') listener.callback(localSnapshot(listener.path));
+            }
+        }
+
+        const db = {
+            ref(path = '') {
+                const normalizedPath = localPathParts(path).join('/');
+                const parts = localPathParts(normalizedPath);
+                const reference = {
+                    key: parts[parts.length - 1] || null,
+                    once: () => Promise.resolve(localSnapshot(normalizedPath)),
+                    on(event, callback) {
+                        const listener = { path: normalizedPath, event, callback };
+                        localDatabaseListeners.add(listener);
+                        if (event === 'value') callback(localSnapshot(normalizedPath));
+                        else if (event === 'child_added') localSnapshot(normalizedPath).forEach(callback);
+                        return callback;
+                    },
+                    off(event, callback) {
+                        for (const listener of localDatabaseListeners) {
+                            if (listener.path === normalizedPath && (!event || listener.event === event) && (!callback || listener.callback === callback)) {
+                                localDatabaseListeners.delete(listener);
+                            }
+                        }
+                    },
+                    set(value) {
+                        try {
+                            let target = localDatabase;
+                            for (const part of parts.slice(0, -1)) target = target[part] ||= {};
+                            if (parts.length) target[parts[parts.length - 1]] = value;
+                            else localDatabase = value;
+                            localPersist();
+                            localNotify(normalizedPath);
+                            return Promise.resolve();
+                        } catch (error) {
+                            return Promise.reject(error);
+                        }
+                    },
+                    update(value) {
+                        return reference.set({ ...(localRead(normalizedPath) || {}), ...value });
+                    },
+                    remove() {
+                        if (!parts.length) return reference.set({});
+                        const parent = localRead(parts.slice(0, -1).join('/'));
+                        if (parent) delete parent[parts[parts.length - 1]];
+                        try {
+                            localPersist();
+                            localNotify(normalizedPath);
+                            return Promise.resolve();
+                        } catch (error) {
+                            return Promise.reject(error);
+                        }
+                    },
+                    push(value) {
+                        const childKey = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+                        const child = db.ref(normalizedPath ? `${normalizedPath}/${childKey}` : childKey);
+                        return value === undefined ? child : child.set(value).then(() => child);
+                    }
+                };
+                return reference;
+            }
+        };
+        const planeFeed = db.ref('planeFeed');
         let planeAuth = null;
         let planeExpiryTimer = null;
         let planeFeedAttached = false;
@@ -2766,18 +2847,18 @@
 
         /* ══════════ SERVERS (avatars) ══════════ */
         const AVATARS = [
-            'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSRhQr2O18AH-vidftn_xD9joIwHdq_rABnwBFnf1eU6w&s=10',
-            'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT5u3z6h4b3C4MK7xiR_PaFd-l1LF2ebdRTsWN73qlOheSCVnnYvAjvWuzd&s=10',
-            'https://s3-eu-west-1.amazonaws.com/tpd/logos/694048f974cf034e3abc290d/0x0.png',
-            'https://img.utdstc.com/icon/3d1/08a/3d108a3cc5f7616713c3fcbca5a4fbf7c2dbfe6ba9612971542d60e124a3a405:200',
-            'https://play-lh.googleusercontent.com/5Ep1MDM5lOVF0_ZAyHqr7CbKnG_bkfrv7G1uQ8MUGxbVWMcZEhDbA4IYhXJ2xnRGXKq1',
-            'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTLbE4chB6MdOHDspNoee7v5T1hbowMz1byr3vcYamfgA&s=10'
+            'assets/aviator-logo.png',
+            'assets/apple-logo.webp',
+            'assets/plane-card.jpg',
+            'assets/apple-card.jpg',
+            'assets/plane-package.png',
+            'assets/glitch-logo.png'
         ];
         const DEFAULT_SITE_SETTINGS = {
             servers: AVATARS.map((url, idx) => ({ name: `سيرفر ${idx + 1}`, url })),
             images: {
                 mainLogo: '',
-                planeLogo: 'https://i.ibb.co/p6sZpk28/photo-2026-08-25-02-03-50.jpg',
+                planeLogo: 'assets/aviator-logo.png',
                 appleLogo: 'assets/apple-logo.webp',
                 planeCard: 'assets/plane-card.jpg',
                 appleCard: 'assets/apple-card.jpg',
@@ -2786,7 +2867,24 @@
             },
             planeRingSpeedSeconds: 4
         };
-        let siteSettings = JSON.parse(JSON.stringify(DEFAULT_SITE_SETTINGS));
+        const SITE_SETTINGS_STORAGE_KEY = 'darkstorm_site_settings';
+        const WALLET_STORAGE_KEY = 'darkstorm_wallet';
+
+        function loadLocalSiteSettings() {
+            try {
+                const saved = JSON.parse(localStorage.getItem(SITE_SETTINGS_STORAGE_KEY) || 'null');
+                if (!saved || typeof saved !== 'object') return JSON.parse(JSON.stringify(DEFAULT_SITE_SETTINGS));
+                return {
+                    servers: Array.isArray(saved.servers) && saved.servers.length ? saved.servers : DEFAULT_SITE_SETTINGS.servers,
+                    images: { ...DEFAULT_SITE_SETTINGS.images, ...(saved.images || {}) },
+                    planeRingSpeedSeconds: normalizePlaneRingSpeed(saved.planeRingSpeedSeconds)
+                };
+            } catch (error) {
+                return JSON.parse(JSON.stringify(DEFAULT_SITE_SETTINGS));
+            }
+        }
+
+        let siteSettings = loadLocalSiteSettings();
         let selAv = '',
             curItem = null;
 
@@ -2800,7 +2898,7 @@
                 row.className = 'av-row';
                 row.dataset.idx = idx;
                 row.innerHTML = `
-      <div class="av-circle"><img src="${url}" loading="lazy" onerror="this.src='https://i.postimg.cc/MpHvt0FQ/IMG-20260119-060329-514.jpg'"></div>
+    <div class="av-circle"><img src="${url}" loading="lazy" onerror="this.src='assets/glitch-logo.png'"></div>
             <div class="av-info">
                 <div class="av-name">${escapeHtml(server.name || `سيرفر ${idx+1}`)}</div>
       </div>
@@ -2829,16 +2927,6 @@
             });
         }
         renderSiteServers();
-        db.ref('settings/site').once('value').then(snap => {
-            const saved = snap.val() || {};
-            siteSettings = {
-                servers: Array.isArray(saved.servers) && saved.servers.length ? saved.servers : DEFAULT_SITE_SETTINGS.servers,
-                images: { ...DEFAULT_SITE_SETTINGS.images, ...(saved.images || {}) },
-                planeRingSpeedSeconds: normalizePlaneRingSpeed(saved.planeRingSpeedSeconds)
-            };
-            renderSiteServers();
-            applySiteImages();
-        });
 
         /* ══════════ NAV ══════════ */
         function showPage(id) {
@@ -2872,35 +2960,13 @@
                 openAdmin();
                 return;
             }
-            const isActivationCode = /^[A-Z0-9]+-[A-Z0-9]{10}$/.test(code);
-            try {
-                const response = await fetch('/api/admin-login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'same-origin',
-                    body: JSON.stringify({ id, code })
-                });
-                if (response.ok) {
-                    document.getElementById('adm-gate').classList.remove('hidden');
-                    openAdmin();
-                    return;
-                }
-                if (response.status !== 401 && !isActivationCode) {
-                    const result = await response.json().catch(() => ({}));
-                    return toast('❌ ' + (result.error || 'خدمة الإدارة غير مفعلة على هذا الموقع. افتح رابط النشر واضبط إعدادات الخادم.'));
-                }
-            } catch (error) {
-                if (!isActivationCode) return toast(location.protocol === 'file:'
-                    ? '❌ افتح الموقع من رابط النشر؛ تشغيل الملف مباشرة لا يدعم دخول الإدارة.'
-                    : '❌ تعذر الاتصال بخدمة تسجيل دخول الإدارة. تحقق من نشر API.');
-            }
             if (!/^[A-Z0-9]+-[A-Z0-9]{10}$/.test(code)) return toast('❌ صيغة الكود غير صحيحة؛ يجب أن تكون DARK-XXXXXXXXXX');
             showLoader('VERIFYING CODE');
-            db.ref('keys/' + code).once('value').then(async snap => {
+            try {
+                const snap = await db.ref('keys/' + code).once('value');
                 hideLoader();
                 const d = snap.val();
                 const isPlane = requestedProduct === 'plane';
-                await serverTimeReady;
                 if (d && Number(d.users) > 0 && new Date(d.expiry).getTime() > serverNow()) {
                     if (!['plane', 'apple'].includes(d.product) || d.product !== requestedProduct) {
                         const message = d.product === 'plane'
@@ -2914,7 +2980,7 @@
                         hideLoader();
                         return toast('⚠️ اختر الشخصية أولاً للدخول إلى كشف النمط');
                     }
-                    db.ref('keys/' + code).update({
+                    await db.ref('keys/' + code).update({
                         users: d.users - 1
                     });
                     if (isPlane) {
@@ -2925,10 +2991,10 @@
                         startApp(id, d.expiry, 'apple');
                     }
                 } else toast('❌ الكود خطأ أو منتهي أو محروق');
-            }).catch(() => {
+            } catch (error) {
                 hideLoader();
-                toast('❌ تعذر الاتصال بقاعدة Firebase');
-            });
+                toast('❌ تعذر قراءة بيانات الكود من هذا المتصفح');
+            }
         }
 
         function startApp(id, exp, product = 'apple') {
@@ -3199,23 +3265,28 @@
             { name:'ساعة', price:600, minutes:60 },
             { name:'ساعتين', price:1000, minutes:120 }
         ];
+        for (const [product, packages] of Object.entries({ plane: PLANE_PACKAGES, apple: APPLE_PACKAGES })) {
+            if (!localRead(`products/${product}`)) {
+                const defaults = Object.fromEntries(packages.map((item, index) => [`default-${index + 1}`, item]));
+                db.ref(`products/${product}`).set(defaults).catch(() => {});
+            }
+        }
         let PLANE_LOGO_IMAGE = DEFAULT_SITE_SETTINGS.images.planeLogo;
         let APPLE_LOGO_IMAGE = DEFAULT_SITE_SETTINGS.images.appleLogo;
         // صور كروت الباقات محلية وثابتة؛ لا يتم قراءتها أو تحديثها من Firebase.
         let PLANE_CARD_IMAGE = DEFAULT_SITE_SETTINGS.images.planeCard;
         let APPLE_CARD_IMAGE = DEFAULT_SITE_SETTINGS.images.appleCard;
+        applySiteImages();
         const DEFAULT_WALLET = '01069311729';
         const walletDisplay = document.getElementById('wallet-num');
-        async function loadWallet() {
+        function loadWallet() {
+            let wallet = DEFAULT_WALLET;
             try {
-                const response = await fetch('/api/wallet', { cache: 'no-store' });
-                const result = await response.json();
-                if (!response.ok) throw new Error(result.error || 'تعذر تحميل رقم المحفظة');
-                if (walletDisplay) walletDisplay.innerText = result.wallet || DEFAULT_WALLET;
+                wallet = localStorage.getItem(WALLET_STORAGE_KEY) || DEFAULT_WALLET;
             } catch (error) {
-                if (walletDisplay) walletDisplay.innerText = DEFAULT_WALLET;
-                console.error('تعذر تحميل رقم المحفظة:', error);
+                console.error('تعذر تحميل رقم المحفظة من التخزين المحلي:', error);
             }
+            if (walletDisplay) walletDisplay.innerText = wallet;
         }
         loadWallet();
         let selectedProduct = null;
@@ -3231,7 +3302,7 @@
             chooser.innerHTML = `
               <div class="product-card" data-product="plane" onclick="chooseProduct('plane')"><div class="product-logo"><img src="${PLANE_LOGO_IMAGE}" loading="lazy" alt="الطيارة"></div><div class="product-title">الطيارة</div><div class="product-desc">باقات الطيارة</div></div>
               <div class="product-card" data-product="apple" onclick="chooseProduct('apple')"><div class="product-logo"><img src="${APPLE_LOGO_IMAGE}" loading="lazy" alt="التفاحة"></div><div class="product-title">التفاحة</div><div class="product-desc">باقات التفاحة</div></div>`;
-            // البيانات يكتبها الأدمن، لكن الصور تظل محلية وثابتة ولا تُقرأ من Firebase.
+            // بيانات الباقات والصور تُقرأ محليًا من هذا المتصفح.
             Promise.all([
                 db.ref('products/plane').once('value'),
                 db.ref('products/apple').once('value')
@@ -3249,10 +3320,10 @@
                     });
                     return items;
                 };
-                const planeFromFirebase = readPackages(planeSnap);
-                const appleFromFirebase = readPackages(appleSnap);
-                packageCatalogByProduct.plane = planeFromFirebase.length ? planeFromFirebase : PLANE_PACKAGES.slice();
-                packageCatalogByProduct.apple = appleFromFirebase.length ? appleFromFirebase : APPLE_PACKAGES.slice();
+                const planeFromLocal = readPackages(planeSnap);
+                const appleFromLocal = readPackages(appleSnap);
+                packageCatalogByProduct.plane = planeFromLocal.length ? planeFromLocal : PLANE_PACKAGES.slice();
+                packageCatalogByProduct.apple = appleFromLocal.length ? appleFromLocal : APPLE_PACKAGES.slice();
                 if (selectedProduct) renderPackageCards(selectedProduct);
             });
         }
@@ -3291,6 +3362,30 @@
             loadWallet();
         }
         function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
+        function readOrderImage(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onerror = () => reject(new Error('تعذر قراءة صورة التحويل'));
+                reader.onload = () => {
+                    const image = new Image();
+                    image.onerror = () => reject(new Error('صيغة صورة التحويل غير مدعومة'));
+                    image.onload = () => {
+                        const scale = Math.min(1, 1400 / Math.max(image.width, image.height));
+                        const canvas = document.createElement('canvas');
+                        canvas.width = Math.max(1, Math.round(image.width * scale));
+                        canvas.height = Math.max(1, Math.round(image.height * scale));
+                        const context = canvas.getContext('2d');
+                        if (!context) return reject(new Error('تعذر تجهيز صورة التحويل'));
+                        context.fillStyle = '#fff';
+                        context.fillRect(0, 0, canvas.width, canvas.height);
+                        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+                        resolve(canvas.toDataURL('image/jpeg', 0.72));
+                    };
+                    image.src = reader.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
         async function sendOrder() {
             const tg = document.getElementById('pay-tg').value.trim();
             const num = document.getElementById('pay-num').value.trim();
@@ -3301,32 +3396,17 @@
             const sendBtn = document.getElementById('send-order-btn');
             if (sendBtn?.disabled) return;
             if (sendBtn) { sendBtn.disabled = true; sendBtn.innerText = '⏳ جارٍ إرسال الطلب...'; }
-            const startedAt = Date.now();
             showLoader('VERIFYING PAYMENT');
 
             try {
-                const image = await new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = () => resolve(reader.result);
-                    reader.onerror = () => reject(new Error('تعذر قراءة صورة التحويل'));
-                    reader.readAsDataURL(f);
-                });
+                const image = await readOrderImage(f);
                 const payload = { tg, num, item:curItem.n, price:curItem.p, minutes:curItem.minutes, product:curItem.product, screenshot:image };
-                document.getElementById('loader-txt').innerText = 'SENDING ORDER';
-                const response = await fetch('/api/order', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-                const raw = await response.text();
-                let result;
-                try { result = JSON.parse(raw); } catch (_) { throw new Error('خدمة إرسال الطلب غير مفعّلة على هذا الرابط. ارفع المشروع على Vercel مع إعدادات البوت ثم جرّب مرة أخرى.'); }
-                if (!response.ok) throw new Error(result.error || 'تعذر إرسال الطلب');
-                await db.ref('orders').push({...payload, img:image, sentToTelegram:true, status:'pending', createdAt:Date.now()});
-
-                const remaining = Math.max(0, 900 - (Date.now() - startedAt));
-                if (remaining) await new Promise(resolve => setTimeout(resolve, remaining));
+                await db.ref('orders').push({...payload, img:image, sentToTelegram:false, status:'pending', createdAt:Date.now()});
                 hideLoader();
                 document.getElementById('order-state').classList.remove('hidden');
-                document.getElementById('order-state').innerHTML = '✅ تم إرسال طلبك للأدمن بنجاح<br><span style="font-size:.8rem;color:var(--text2)">سيتم مراجعة الطلب وإرسال كود التفعيل على تيليجرام.</span>';
-                toast('✅ تم إرسال الطلب للأدمن');
-                setTimeout(() => { showPage('pg-app'); toast('✅ تم إرسال الطلب وسيتم مراجعته من الأدمن'); }, 1400);
+                document.getElementById('order-state').innerHTML = '✅ تم حفظ الطلب، انتظر تفعيل الأدمن';
+                if (sendBtn) sendBtn.innerText = '✅ تم حفظ الطلب';
+                toast('✅ تم حفظ الطلب، انتظر تفعيل الأدمن');
             } catch (err) {
                 hideLoader();
                 if (sendBtn) { sendBtn.disabled = false; sendBtn.innerText = '✅ إرسال الطلب'; }
@@ -3377,49 +3457,117 @@
                 : DEFAULT_SITE_SETTINGS.planeRingSpeedSeconds;
         }
 
+        function setSiteImagePreview(previewId, src) {
+            const preview = document.getElementById(previewId);
+            if (!preview) return;
+            if (src) {
+                preview.src = src;
+                preview.classList.remove('hidden');
+            } else {
+                preview.removeAttribute('src');
+                preview.classList.add('hidden');
+            }
+        }
+
+        function bindSiteImageUpload(inputId, previewId, currentImage) {
+            const input = document.getElementById(inputId);
+            const preview = document.getElementById(previewId);
+            setSiteImagePreview(previewId, currentImage);
+            if (!input || !preview) return;
+            input.onchange = () => {
+                const file = input.files?.[0];
+                if (!file) return;
+                if (!file.type.startsWith('image/')) {
+                    input.value = '';
+                    return toast('❌ اختر ملف صورة صالحًا');
+                }
+                const objectUrl = URL.createObjectURL(file);
+                preview.src = objectUrl;
+                preview.classList.remove('hidden');
+                preview.onload = () => URL.revokeObjectURL(objectUrl);
+            };
+        }
+
+        function readCompressedSiteImage(file) {
+            return new Promise((resolve, reject) => {
+                if (!file || !file.type.startsWith('image/')) return reject(new Error('اختر ملف صورة صالحًا'));
+                if (file.size > 12 * 1024 * 1024) return reject(new Error('حجم الصورة يجب أن يكون أقل من 12MB'));
+                const reader = new FileReader();
+                reader.onerror = () => reject(new Error('تعذر قراءة الصورة'));
+                reader.onload = () => {
+                    const image = new Image();
+                    image.onerror = () => reject(new Error('صيغة الصورة غير مدعومة'));
+                    image.onload = () => {
+                        const scale = Math.min(1, 1400 / Math.max(image.width, image.height));
+                        const canvas = document.createElement('canvas');
+                        canvas.width = Math.max(1, Math.round(image.width * scale));
+                        canvas.height = Math.max(1, Math.round(image.height * scale));
+                        const context = canvas.getContext('2d');
+                        if (!context) return reject(new Error('تعذر تجهيز الصورة'));
+                        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+                        resolve(canvas.toDataURL('image/webp', 0.8));
+                    };
+                    image.src = reader.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
         function loadSiteSettings() {
             const servers = siteSettings.servers || DEFAULT_SITE_SETTINGS.servers;
             const list = document.getElementById('site-servers-list');
-            list.innerHTML = servers.map((server, idx) => `<div class="site-setting-row"><div class="fgrp"><label class="flbl">اسم السيرفر ${idx + 1}</label><input type="text" id="site-server-name-${idx}" class="inp" value="${escapeHtml(server.name || '')}"></div><div class="fgrp"><label class="flbl">صورة السيرفر ${idx + 1}</label><input type="url" id="site-server-url-${idx}" class="inp" value="${escapeHtml(server.url || '')}" placeholder="https://example.com/server.jpg"></div></div>`).join('');
+            list.innerHTML = servers.map((server, idx) => `<div class="site-setting-row"><div class="fgrp"><label class="flbl">اسم السيرفر ${idx + 1}</label><input type="text" id="site-server-name-${idx}" class="inp" value="${escapeHtml(server.name || '')}"></div><div class="fgrp"><label class="flbl">صورة السيرفر ${idx + 1}</label><input type="file" id="site-server-image-${idx}" class="inp" accept="image/*"><img id="site-server-preview-${idx}" class="site-image-preview hidden" alt="معاينة صورة السيرفر ${idx + 1}"></div></div>`).join('');
             const images = siteSettings.images || {};
-            document.getElementById('site-main-logo').value = images.mainLogo || '';
-            document.getElementById('site-plane-logo').value = images.planeLogo || '';
-            document.getElementById('site-apple-logo').value = images.appleLogo || '';
-            document.getElementById('site-plane-card').value = images.planeCard || '';
-            document.getElementById('site-apple-card').value = images.appleCard || '';
-            document.getElementById('site-plane-background').value = images.planeBackground || '';
-            document.getElementById('site-plane-ring').value = images.planeRing || '';
+            const uploadFields = [
+                ['site-main-logo', 'site-main-logo-preview', images.mainLogo],
+                ['site-plane-logo', 'site-plane-logo-preview', images.planeLogo],
+                ['site-apple-logo', 'site-apple-logo-preview', images.appleLogo],
+                ['site-plane-card', 'site-plane-card-preview', images.planeCard],
+                ['site-apple-card', 'site-apple-card-preview', images.appleCard],
+                ['site-plane-background', 'site-plane-background-preview', images.planeBackground],
+                ['site-plane-ring', 'site-plane-ring-preview', images.planeRing]
+            ];
+            uploadFields.forEach(([inputId, previewId, currentImage]) => bindSiteImageUpload(inputId, previewId, currentImage));
+            servers.forEach((server, idx) => bindSiteImageUpload(`site-server-image-${idx}`, `site-server-preview-${idx}`, server.url));
             document.getElementById('site-plane-ring-speed').value = normalizePlaneRingSpeed(siteSettings.planeRingSpeedSeconds);
         }
 
-        function saveSiteSettings() {
+        async function saveSiteSettings() {
             const ringSpeedValue = document.getElementById('site-plane-ring-speed').value.trim();
             const ringSpeed = Number(ringSpeedValue);
             if (!ringSpeedValue || !Number.isFinite(ringSpeed) || ringSpeed < 0.2 || ringSpeed > 30) {
                 return toast('❌ سرعة دوران الدائرة يجب أن تكون بين 0.2 و30 ثانية');
             }
-            const servers = (siteSettings.servers || DEFAULT_SITE_SETTINGS.servers).map((server, idx) => ({
-                name: document.getElementById(`site-server-name-${idx}`).value.trim() || `سيرفر ${idx + 1}`,
-                url: document.getElementById(`site-server-url-${idx}`).value.trim() || server.url
-            }));
-
-            restorePlaneSession();
-            const images = {
-                mainLogo: document.getElementById('site-main-logo').value.trim(),
-                planeLogo: document.getElementById('site-plane-logo').value.trim() || DEFAULT_SITE_SETTINGS.images.planeLogo,
-                appleLogo: document.getElementById('site-apple-logo').value.trim() || DEFAULT_SITE_SETTINGS.images.appleLogo,
-                planeCard: document.getElementById('site-plane-card').value.trim() || DEFAULT_SITE_SETTINGS.images.planeCard,
-                appleCard: document.getElementById('site-apple-card').value.trim() || DEFAULT_SITE_SETTINGS.images.appleCard,
-                planeBackground: document.getElementById('site-plane-background').value.trim() || DEFAULT_SITE_SETTINGS.images.planeBackground,
-                planeRing: document.getElementById('site-plane-ring').value.trim() || DEFAULT_SITE_SETTINGS.images.planeRing
-            };
-            const next = { servers, images, planeRingSpeedSeconds: ringSpeed };
-            db.ref('settings/site').set(next).then(() => {
+            try {
+                const currentServers = siteSettings.servers || DEFAULT_SITE_SETTINGS.servers;
+                const servers = await Promise.all(currentServers.map(async (server, idx) => {
+                    const file = document.getElementById(`site-server-image-${idx}`).files[0];
+                    return {
+                        name: document.getElementById(`site-server-name-${idx}`).value.trim() || `سيرفر ${idx + 1}`,
+                        url: file ? await readCompressedSiteImage(file) : server.url
+                    };
+                }));
+                const images = { ...DEFAULT_SITE_SETTINGS.images, ...(siteSettings.images || {}) };
+                const imageFields = {
+                    mainLogo: 'site-main-logo', planeLogo: 'site-plane-logo', appleLogo: 'site-apple-logo',
+                    planeCard: 'site-plane-card', appleCard: 'site-apple-card',
+                    planeBackground: 'site-plane-background', planeRing: 'site-plane-ring'
+                };
+                for (const [setting, inputId] of Object.entries(imageFields)) {
+                    const file = document.getElementById(inputId).files[0];
+                    if (file) images[setting] = await readCompressedSiteImage(file);
+                }
+                const next = { servers, images, planeRingSpeedSeconds: ringSpeed };
+                localStorage.setItem(SITE_SETTINGS_STORAGE_KEY, JSON.stringify(next));
                 siteSettings = next;
+                restorePlaneSession();
                 renderSiteServers();
                 applySiteImages();
+                document.querySelectorAll('#ap-site input[type="file"]').forEach(input => { input.value = ''; });
                 toast('✅ تم تحديث أسماء وصور الموقع');
-            }).catch(() => toast('❌ تعذر حفظ إعدادات الموقع'));
+            } catch (error) {
+                toast('❌ ' + (error.message || 'تعذر حفظ الإعدادات على هذا المتصفح'));
+            }
         }
 
         async function generateKey(product) {
@@ -3602,23 +3750,17 @@
             db.ref('orders/' + id).remove();
         }
 
-        async function updateWallet() {
+        function updateWallet() {
             const w = document.getElementById('new-wallet').value.trim();
-            if (!w) return toast('ادخل الرقم');
+            const normalized = w.replace(/[\s()+-]/g, '');
+            if (!/^\d{8,15}$/.test(normalized)) return toast('❌ أدخل رقم محفظة صحيحًا من 8 إلى 15 رقمًا');
             try {
-                const response = await fetch('/api/wallet', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'same-origin',
-                    body: JSON.stringify({ wallet: w })
-                });
-                const result = await response.json();
-                if (!response.ok) throw new Error(result.error || 'تعذر تحديث رقم المحفظة');
-                if (walletDisplay) walletDisplay.innerText = result.wallet;
+                localStorage.setItem(WALLET_STORAGE_KEY, w);
+                if (walletDisplay) walletDisplay.innerText = w;
                 toast('✅ تم التحديث');
             } catch (error) {
-                console.error('تعذر تحديث رقم المحفظة:', error);
-                toast('❌ ' + error.message);
+                console.error('تعذر حفظ رقم المحفظة محليًا:', error);
+                toast('❌ تعذر حفظ رقم المحفظة على هذا المتصفح');
             }
         }
 
