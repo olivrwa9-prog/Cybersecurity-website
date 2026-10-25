@@ -2,7 +2,11 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import adminDataHandler from './api/admin-data.js';
+import adminLoginHandler from './api/admin-login.js';
+import approveHandler from './api/approve.js';
 import orderHandler from './api/order.js';
+import walletHandler from './api/wallet.js';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const maxBodyBytes = 6 * 1024 * 1024;
@@ -19,6 +23,13 @@ const mimeTypes = {
   '.webp': 'image/webp',
   '.woff2': 'font/woff2'
 };
+const apiHandlers = new Map([
+  ['/api/admin-data', adminDataHandler],
+  ['/api/admin-login', adminLoginHandler],
+  ['/api/approve', approveHandler],
+  ['/api/order', orderHandler],
+  ['/api/wallet', walletHandler]
+]);
 
 async function loadEnvironment() {
   let contents;
@@ -60,18 +71,19 @@ function sendJson(response, statusCode, body) {
 await loadEnvironment();
 
 const server = createServer(async (request, response) => {
-  const pathname = new URL(request.url, 'http://localhost').pathname;
+  const requestUrl = new URL(request.url, 'http://localhost');
+  const pathname = requestUrl.pathname;
+  const apiHandler = apiHandlers.get(pathname);
 
-  if (pathname === '/api/order') {
-    if (request.method !== 'POST') {
-      sendJson(response, 405, { error: 'Method not allowed' });
-      return;
-    }
-
+  if (apiHandler) {
     try {
-      const body = await readJsonBody(request);
+      const body = request.method === 'POST' ? await readJsonBody(request) : {};
       const apiResponse = {
         statusCode: 200,
+        setHeader(name, value) {
+          response.setHeader(name, value);
+          return this;
+        },
         status(code) {
           this.statusCode = code;
           return this;
@@ -81,10 +93,15 @@ const server = createServer(async (request, response) => {
           return this;
         }
       };
-      await orderHandler({ method: request.method, body }, apiResponse);
+      await apiHandler({
+        method: request.method,
+        body,
+        headers: request.headers,
+        query: Object.fromEntries(requestUrl.searchParams)
+      }, apiResponse);
     } catch (error) {
       sendJson(response, error.statusCode || 400, {
-        error: error.statusCode === 413 ? 'حجم الطلب أكبر من الحد المسموح' : 'تعذر قراءة بيانات الطلب'
+        error: error.statusCode === 413 ? 'حجم الطلب أكبر من الحد المسموح' : 'تعذر معالجة الطلب'
       });
     }
     return;

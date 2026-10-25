@@ -1,7 +1,7 @@
 # التشغيل المحلي
 
 1. ثبّت Node.js 20 أو أحدث.
-2. انسخ `.env.example` إلى `.env`، ثم املأ `TELEGRAM_BOT_TOKEN` و`TELEGRAM_CHAT_ID`.
+2. انسخ `.env.example` إلى `.env`. أضف إعدادات Firebase Admin ودخول الأدمن، وأضف `TELEGRAM_BOT_TOKEN` و`TELEGRAM_CHAT_ID` لإرسال الطلبات.
 3. من مجلد المشروع شغّل `npm start` وافتح `http://127.0.0.1:3000`.
 
 التوكن محفوظ في `.env` ولا يوضع في HTML. هذا الخادم متاح على جهازك فقط؛ إذا كان الموقع عامًا، يلزم تشغيل الـ API على خادم عام يدعم Node.js وضبط عنوان الطلبات، لكن لا يلزم استخدام Vercel.

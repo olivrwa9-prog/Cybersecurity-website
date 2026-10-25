@@ -1,3 +1,5 @@
+import { getAdminDatabase } from './_lib/firebase-database.js';
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -39,6 +41,20 @@ export default async function handler(req, res) {
 
     const label = product === 'plane' ? '✈️ الطيارة' : product === 'apple' ? '🍎 التفاحة' : '📦 الطلب';
     const text = `🛒 طلب كود تفعيل جديد\n\nالنوع: ${label}\nالباقة: ${item}\nالمدة: ${minutes} دقيقة\nالسعر: ${price} EGP\nTelegram: ${tg}\nرقم التحويل: ${num}\n\nراجع الصورة ثم وافق من لوحة تحكم الموقع لتوليد الكود.`;
+    const orderRef = getAdminDatabase().ref('orders').push();
+    await orderRef.set({
+      tg,
+      num,
+      item,
+      price,
+      minutes,
+      product,
+      screenshot: dataUrl,
+      img: dataUrl,
+      status: 'pending',
+      sentToTelegram: false,
+      createdAt: Date.now()
+    });
 
     const form = new FormData();
     form.append('chat_id', chatId);
@@ -52,10 +68,12 @@ export default async function handler(req, res) {
 
     const result = await tgResponse.json();
     if (!tgResponse.ok || !result.ok) {
+      await orderRef.update({ telegramError: true });
       return res.status(502).json({ error: 'تعذر إرسال الطلب إلى تيليجرام' });
     }
 
-    return res.status(200).json({ ok: true, messageId: result.result?.message_id });
+    await orderRef.update({ sentToTelegram: true, telegramMessageId: result.result?.message_id || null });
+    return res.status(200).json({ ok: true, orderId: orderRef.key, messageId: result.result?.message_id });
   } catch (error) {
     console.error('Telegram order error:', error);
     return res.status(500).json({ error: 'حدث خطأ أثناء إرسال الطلب' });

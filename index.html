@@ -2711,11 +2711,10 @@
     <script>
         /* ══════════ LOCAL DATA ══════════ */
         const LOCAL_DATA_KEY = 'darkstorm_local_database_v1';
-        const ADMIN_USER_ID = '852789456123';
-        const ADMIN_ACTIVATION_CODE = 'dark852789456123';
         const serverTimeReady = Promise.resolve();
         const serverNow = () => Date.now();
         let localDatabase = {};
+        let hasAdminSession = false;
         const localDatabaseListeners = new Set();
 
         try {
@@ -2752,6 +2751,30 @@
             localStorage.setItem(LOCAL_DATA_KEY, JSON.stringify(localDatabase));
         }
 
+        function applyLocalValue(path, value) {
+            const parts = localPathParts(path);
+            let target = localDatabase;
+            for (const part of parts.slice(0, -1)) target = target[part] ||= {};
+            if (parts.length) target[parts[parts.length - 1]] = value;
+            localPersist();
+            localNotify(parts.join('/'));
+        }
+
+        async function sharedRequest(path, options = {}) {
+            const response = await fetch(path, { credentials: 'same-origin', ...options });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(result.error || 'تعذر الاتصال بالخادم المشترك');
+            return result;
+        }
+
+        function saveSharedValue(path, value) {
+            return sharedRequest('/api/admin-data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path, value })
+            });
+        }
+
         function localNotify(changedPath) {
             for (const listener of localDatabaseListeners) {
                 const overlaps = listener.path === changedPath || listener.path.startsWith(`${changedPath}/`) || changedPath.startsWith(`${listener.path}/`);
@@ -2780,8 +2803,11 @@
                             }
                         }
                     },
-                    set(value) {
+                    async set(value) {
                         try {
+                            if (hasAdminSession && (/^(settings\/site|products\/(plane|apple)(\/[A-Za-z0-9_-]+)?|keys\/[A-Z0-9-]+|orders\/[A-Za-z0-9_-]+)$/.test(normalizedPath))) {
+                                await saveSharedValue(normalizedPath, value);
+                            }
                             let target = localDatabase;
                             for (const part of parts.slice(0, -1)) target = target[part] ||= {};
                             if (parts.length) target[parts[parts.length - 1]] = value;
@@ -2796,8 +2822,11 @@
                     update(value) {
                         return reference.set({ ...(localRead(normalizedPath) || {}), ...value });
                     },
-                    remove() {
+                    async remove() {
                         if (!parts.length) return reference.set({});
+                        if (hasAdminSession && (/^(products\/(plane|apple)\/[^/]+|keys\/[A-Z0-9-]+|orders\/[A-Za-z0-9_-]+)$/.test(normalizedPath))) {
+                            await saveSharedValue(normalizedPath, null);
+                        }
                         const parent = localRead(parts.slice(0, -1).join('/'));
                         if (parent) delete parent[parts[parts.length - 1]];
                         try {
@@ -2821,6 +2850,52 @@
         let planeAuth = null;
         let planeExpiryTimer = null;
         let planeFeedAttached = false;
+        async function loadSharedPublicData() {
+            const data = await sharedRequest('/api/admin-data?path=public');
+            if (data.site) {
+                localStorage.setItem(SITE_SETTINGS_STORAGE_KEY, JSON.stringify(data.site));
+                siteSettings = loadLocalSiteSettings();
+                renderSiteServers();
+                applySiteImages();
+            }
+            if (data.walletStored && data.wallet) {
+                localStorage.setItem(WALLET_STORAGE_KEY, data.wallet);
+                if (walletDisplay) walletDisplay.innerText = data.wallet;
+            }
+            if (!data.walletStored && walletDisplay) walletDisplay.innerText = localStorage.getItem(WALLET_STORAGE_KEY) || data.wallet;
+            for (const product of ['plane', 'apple']) {
+                if (data.products?.[product]) applyLocalValue(`products/${product}`, data.products[product]);
+            }
+            return data;
+        }
+
+        async function loadSharedAdminData() {
+            const publicData = await loadSharedPublicData();
+            if (!publicData.site && localStorage.getItem(SITE_SETTINGS_STORAGE_KEY)) {
+                await saveSharedValue('settings/site', JSON.parse(localStorage.getItem(SITE_SETTINGS_STORAGE_KEY)));
+            }
+            if (!publicData.walletStored && localStorage.getItem(WALLET_STORAGE_KEY)) {
+                await saveSharedValue('settings/wallet', localStorage.getItem(WALLET_STORAGE_KEY));
+            }
+            for (const product of ['plane', 'apple']) {
+                const localProducts = localRead(`products/${product}`);
+                if (!publicData.products?.[product] && localProducts) await saveSharedValue(`products/${product}`, localProducts);
+            }
+
+            for (const collection of ['keys', 'orders']) {
+                let result = await sharedRequest(`/api/admin-data?path=${collection}`);
+                const localItems = localRead(collection);
+                if (!result.value && localItems) {
+                    for (const [id, value] of Object.entries(localItems)) {
+                        await saveSharedValue(`${collection}/${id}`, value);
+                    }
+                    result = await sharedRequest(`/api/admin-data?path=${collection}`);
+                }
+                if (result.value) applyLocalValue(collection, result.value);
+            }
+        }
+
+        loadSharedPublicData().catch(() => {});
 
         /* ══════════ AMBIENT PARTICLES (lightweight) ══════════ */
         (function() {
@@ -2955,45 +3030,50 @@
             const code = document.getElementById('code-field').value.trim().toUpperCase();
             const requestedProduct = document.getElementById('login-product').value;
             if (!id || !code) return toast('⚠️ أكمل بياناتك');
-            if (id.toUpperCase() === ADMIN_USER_ID.toUpperCase() && code === ADMIN_ACTIVATION_CODE.toUpperCase()) {
-                document.getElementById('adm-gate').classList.remove('hidden');
-                openAdmin();
-                return;
+            const isActivationCode = /^[A-Z0-9]+-[A-Z0-9]{10}$/.test(code);
+            if (!isActivationCode) {
+                try {
+                    const result = await sharedRequest('/api/admin-login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id, code })
+                    });
+                    hasAdminSession = true;
+                    document.getElementById('adm-gate').classList.remove('hidden');
+                    try {
+                        await loadSharedAdminData();
+                    } catch (error) {
+                        toast('⚠️ تعذر تحميل البيانات المشتركة: ' + error.message);
+                    }
+                    openAdmin();
+                    return;
+                } catch (error) {
+                    return toast('❌ ' + error.message);
+                }
             }
             if (!/^[A-Z0-9]+-[A-Z0-9]{10}$/.test(code)) return toast('❌ صيغة الكود غير صحيحة؛ يجب أن تكون DARK-XXXXXXXXXX');
             showLoader('VERIFYING CODE');
             try {
-                const snap = await db.ref('keys/' + code).once('value');
+                const result = await sharedRequest('/api/admin-data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'consume-key', code, product: requestedProduct })
+                });
                 hideLoader();
-                const d = snap.val();
+                const d = result.key;
                 const isPlane = requestedProduct === 'plane';
-                if (d && Number(d.users) > 0 && new Date(d.expiry).getTime() > serverNow()) {
-                    if (!['plane', 'apple'].includes(d.product) || d.product !== requestedProduct) {
-                        const message = d.product === 'plane'
-                            ? 'هذا الكود مخصص للطيارة فقط'
-                            : d.product === 'apple'
-                                ? 'هذا الكود مخصص للتفاحة فقط'
-                                : 'نوع هذا الكود غير معروف';
-                        return toast('❌ ' + message);
-                    }
-                    if (!isPlane && !selAv) {
-                        hideLoader();
-                        return toast('⚠️ اختر الشخصية أولاً للدخول إلى كشف النمط');
-                    }
-                    await db.ref('keys/' + code).update({
-                        users: d.users - 1
-                    });
-                    if (isPlane) {
-                        localStorage.setItem('darkPlaneAuth', JSON.stringify({id, code, expiry:d.expiry}));
-                        startPlaneApp(id, code, d.expiry);
-                    } else {
-                        if (!selAv) return toast('⚠️ اختر الشخصية أولاً للدخول إلى كشف النمط');
-                        startApp(id, d.expiry, 'apple');
-                    }
-                } else toast('❌ الكود خطأ أو منتهي أو محروق');
+                if (!isPlane && !selAv) {
+                    return toast('⚠️ اختر الشخصية أولاً للدخول إلى كشف النمط');
+                }
+                if (isPlane) {
+                    localStorage.setItem('darkPlaneAuth', JSON.stringify({id, code, expiry:d.expiry}));
+                    startPlaneApp(id, code, d.expiry);
+                } else {
+                    startApp(id, d.expiry, 'apple');
+                }
             } catch (error) {
                 hideLoader();
-                toast('❌ تعذر قراءة بيانات الكود من هذا المتصفح');
+                toast('❌ ' + error.message);
             }
         }
 
@@ -3076,18 +3156,19 @@
             }
             if (!saved || !saved.id || !/^(?:DARK|GLITCH)-[A-Z0-9]{10}$/.test(saved.code || '')) return;
             await serverTimeReady;
-            db.ref('keys/' + saved.code).once('value').then(snapshot => {
-                const key = snapshot.val();
+            try {
+                const result = await sharedRequest(`/api/admin-data?path=keys/${saved.code}`);
+                const key = result.value;
                 if (!key || key.product !== 'plane' || !key.expiry || new Date(key.expiry).getTime() <= serverNow()) {
                     localStorage.removeItem('darkPlaneAuth');
                     localStorage.removeItem('glitchPlaneAuth');
                     return;
                 }
                 startPlaneApp(saved.id, saved.code, key.expiry);
-            }).catch(() => {
+            } catch (error) {
                 localStorage.removeItem('darkPlaneAuth');
                 localStorage.removeItem('glitchPlaneAuth');
-            });
+            }
         }
 
         function animatePlaneButton(button) {
@@ -3245,6 +3326,7 @@
             };
             tick();
             setInterval(tick, 1000);
+                applyLocalValue(`keys/${code}`, d);
         }
 
         function updateOnline() {
@@ -3273,7 +3355,7 @@
         }
         let PLANE_LOGO_IMAGE = DEFAULT_SITE_SETTINGS.images.planeLogo;
         let APPLE_LOGO_IMAGE = DEFAULT_SITE_SETTINGS.images.appleLogo;
-        // صور كروت الباقات محلية وثابتة؛ لا يتم قراءتها أو تحديثها من Firebase.
+        // الصور الافتراضية محلية، ويمكن استبدالها من إعدادات الموقع المشتركة.
         let PLANE_CARD_IMAGE = DEFAULT_SITE_SETTINGS.images.planeCard;
         let APPLE_CARD_IMAGE = DEFAULT_SITE_SETTINGS.images.appleCard;
         applySiteImages();
@@ -3302,7 +3384,7 @@
             chooser.innerHTML = `
               <div class="product-card" data-product="plane" onclick="chooseProduct('plane')"><div class="product-logo"><img src="${PLANE_LOGO_IMAGE}" loading="lazy" alt="الطيارة"></div><div class="product-title">الطيارة</div><div class="product-desc">باقات الطيارة</div></div>
               <div class="product-card" data-product="apple" onclick="chooseProduct('apple')"><div class="product-logo"><img src="${APPLE_LOGO_IMAGE}" loading="lazy" alt="التفاحة"></div><div class="product-title">التفاحة</div><div class="product-desc">باقات التفاحة</div></div>`;
-            // بيانات الباقات والصور تُقرأ محليًا من هذا المتصفح.
+            // البيانات المحلية نسخة مؤقتة من كتالوج الخادم المشترك.
             Promise.all([
                 db.ref('products/plane').once('value'),
                 db.ref('products/apple').once('value')
@@ -3408,7 +3490,7 @@
                 });
                 const result = await response.json().catch(() => ({}));
                 if (!response.ok) throw new Error(result.error || 'تعذر إرسال الطلب إلى تيليجرام');
-                await db.ref('orders').push({...payload, img:image, sentToTelegram:true, status:'pending', createdAt:Date.now()});
+                applyLocalValue(`orders/${result.orderId}`, {...payload, img:image, sentToTelegram:true, status:'pending', createdAt:Date.now()});
                 hideLoader();
                 document.getElementById('order-state').classList.remove('hidden');
                 document.getElementById('order-state').innerHTML = '✅ تم حفظ الطلب، انتظر تفعيل الأدمن';
@@ -3423,6 +3505,7 @@
 
         /* ══════════ ADMIN ══════════ */
         function openAdmin() {
+            if (!hasAdminSession) return toast('❌ سجل دخول الإدارة أولاً');
             showPage('pg-admin');
         }
 
@@ -3565,6 +3648,8 @@
                     if (file) images[setting] = await readCompressedSiteImage(file);
                 }
                 const next = { servers, images, planeRingSpeedSeconds: ringSpeed };
+                if (!hasAdminSession) throw new Error('سجل دخول الإدارة لحفظ التغييرات على جميع الأجهزة');
+                await saveSharedValue('settings/site', next);
                 localStorage.setItem(SITE_SETTINGS_STORAGE_KEY, JSON.stringify(next));
                 siteSettings = next;
                 restorePlaneSession();
@@ -3593,7 +3678,7 @@
             }).then(() => {
                 toast('✅ ' + code);
                 loadKeys();
-            }).catch(() => toast('❌ تعذر حفظ الكود في Firebase'));
+            }).catch(error => toast('❌ ' + (error.message || 'تعذر حفظ الكود على الخادم')));
         }
 
         function updateKeyCountdowns() {
@@ -3757,17 +3842,19 @@
             db.ref('orders/' + id).remove();
         }
 
-        function updateWallet() {
+        async function updateWallet() {
             const w = document.getElementById('new-wallet').value.trim();
             const normalized = w.replace(/[\s()+-]/g, '');
             if (!/^\d{8,15}$/.test(normalized)) return toast('❌ أدخل رقم محفظة صحيحًا من 8 إلى 15 رقمًا');
             try {
+            if (!hasAdminSession) throw new Error('سجل دخول الإدارة أولاً');
+            await saveSharedValue('settings/wallet', w);
                 localStorage.setItem(WALLET_STORAGE_KEY, w);
                 if (walletDisplay) walletDisplay.innerText = w;
                 toast('✅ تم التحديث');
             } catch (error) {
-                console.error('تعذر حفظ رقم المحفظة محليًا:', error);
-                toast('❌ تعذر حفظ رقم المحفظة على هذا المتصفح');
+                console.error('تعذر حفظ رقم المحفظة على الخادم:', error);
+                toast('❌ ' + (error.message || 'تعذر حفظ رقم المحفظة على الخادم'));
             }
         }
 
