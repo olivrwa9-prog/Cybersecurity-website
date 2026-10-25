@@ -106,7 +106,7 @@ const server = createServer(async (request, response) => {
   }
 
   const isAsset = decodedPath.startsWith('/assets/');
-  if (decodedPath !== '/index.html' && decodedPath !== '/index3333.html' && !isAsset) {
+  if (decodedPath !== '/index.html' && decodedPath !== '/index222.html' && decodedPath !== '/index3333.html' && !isAsset) {
     response.writeHead(404);
     response.end('Not found');
     return;
