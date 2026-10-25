@@ -628,7 +628,7 @@
             top: -150px;
             left: 50%;
             transform: translateX(-50%);
-            width: 480px;
+            width: min(480px, 100vw);
             height: 480px;
             background: radial-gradient(circle, rgba(18, 97, 214, .14) 0%, rgba(47, 140, 255, .04) 40%, transparent 70%);
             pointer-events: none;
@@ -3157,14 +3157,12 @@
             if (!saved || !saved.id || !/^(?:DARK|GLITCH)-[A-Z0-9]{10}$/.test(saved.code || '')) return;
             await serverTimeReady;
             try {
-                const result = await sharedRequest(`/api/admin-data?path=keys/${saved.code}`);
-                const key = result.value;
-                if (!key || key.product !== 'plane' || !key.expiry || new Date(key.expiry).getTime() <= serverNow()) {
-                    localStorage.removeItem('darkPlaneAuth');
-                    localStorage.removeItem('glitchPlaneAuth');
-                    return;
-                }
-                startPlaneApp(saved.id, saved.code, key.expiry);
+                const result = await sharedRequest('/api/admin-data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'check-plane-key', code: saved.code })
+                });
+                startPlaneApp(saved.id, saved.code, result.expiry);
             } catch (error) {
                 localStorage.removeItem('darkPlaneAuth');
                 localStorage.removeItem('glitchPlaneAuth');

@@ -1,0 +1,9 @@
+{
+  "redirects": [
+    { "source": "/index1.html", "destination": "/", "permanent": false },
+    { "source": "/index2.html", "destination": "/", "permanent": false },
+    { "source": "/index222.html", "destination": "/", "permanent": false },
+    { "source": "/index2223.html", "destination": "/", "permanent": false },
+    { "source": "/index3333.html", "destination": "/", "permanent": false }
+  ]
+}

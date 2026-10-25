@@ -75,6 +75,12 @@ const server = createServer(async (request, response) => {
   const pathname = requestUrl.pathname;
   const apiHandler = apiHandlers.get(pathname);
 
+  if (['/index1.html', '/index2.html', '/index222.html', '/index2223.html', '/index3333.html'].includes(pathname)) {
+    response.writeHead(302, { Location: '/' });
+    response.end();
+    return;
+  }
+
   if (apiHandler) {
     try {
       const body = request.method === 'POST' ? await readJsonBody(request) : {};

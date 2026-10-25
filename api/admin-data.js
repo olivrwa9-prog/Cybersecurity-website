@@ -34,13 +34,13 @@ export default async function handler(req, res) {
                 });
             }
 
-            if (PUBLIC_PATHS.has(path) || /^keys\/[A-Z0-9-]{1,40}$/.test(path)) {
+            if (PUBLIC_PATHS.has(path)) {
                 const snapshot = await database.ref(path).once('value');
                 return res.status(200).json({ value: snapshot.val() });
             }
 
             if (!verifyAdminSession(req)) return res.status(401).json({ error: 'سجل دخول الإدارة أولاً' });
-            if (!['keys', 'orders'].includes(path)) return res.status(400).json({ error: 'مسار البيانات غير صالح' });
+            if (!['keys', 'orders'].includes(path) && !/^keys\/[A-Z0-9-]{1,40}$/.test(path)) return res.status(400).json({ error: 'مسار البيانات غير صالح' });
             const snapshot = await database.ref(path).once('value');
             return res.status(200).json({ value: snapshot.val() });
         }
@@ -49,6 +49,17 @@ export default async function handler(req, res) {
         if (!isSameOrigin(req)) return res.status(403).json({ error: 'طلب غير مسموح' });
 
         const body = readBody(req);
+        if (body.action === 'check-plane-key') {
+            const code = String(body.code || '').trim().toUpperCase();
+            if (!/^DARK-[A-Z0-9]{10}$/.test(code)) return res.status(400).json({ error: 'صيغة الكود غير صحيحة' });
+            const snapshot = await database.ref(`keys/${code}`).once('value');
+            const key = snapshot.val();
+            if (!key || key.product !== 'plane' || Number(key.users) < 1 || !Number.isFinite(new Date(key.expiry).getTime()) || new Date(key.expiry).getTime() <= Date.now()) {
+                return res.status(404).json({ error: 'كود الطيارة غير صالح أو منتهي' });
+            }
+            return res.status(200).json({ ok: true, expiry: key.expiry });
+        }
+
         if (body.action === 'consume-key') {
             const code = String(body.code || '').trim().toUpperCase();
             const product = String(body.product || '').trim();
