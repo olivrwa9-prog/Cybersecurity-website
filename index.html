@@ -3063,114 +3063,17 @@
     <!-- /app -->
 
     <script>
-        /* ══════════ LOCAL DATA ══════════ */
-        const LOCAL_DATA_KEY = 'darkstorm_local_database_v1';
+        /* ══════════ FIREBASE DATA ══════════ */
+        const FIREBASE_DB_URL = 'https://dark-storm-21026-default-rtdb.firebaseio.com';
         const ADMIN_USER_ID = '852789456123';
         const ADMIN_ACTIVATION_CODE = 'dark852789456123';
         const serverTimeReady = Promise.resolve();
         const serverNow = () => Date.now();
-        let localDatabase = {};
-        const localDatabaseListeners = new Set();
 
-        try {
-            localDatabase = JSON.parse(localStorage.getItem(LOCAL_DATA_KEY) || '{}');
-        } catch (error) {
-            localDatabase = {};
+        if (!firebase.apps || !firebase.apps.length) {
+            firebase.initializeApp({ databaseURL: FIREBASE_DB_URL });
         }
-
-        function localPathParts(path) {
-            return String(path || '').split('/').filter(Boolean);
-        }
-
-        function localRead(path) {
-            return localPathParts(path).reduce((value, part) => value?.[part], localDatabase);
-        }
-
-        function localSnapshot(path, value = localRead(path)) {
-            const parts = localPathParts(path);
-            return {
-                key: parts[parts.length - 1] || null,
-                val: () => value === undefined ? null : value,
-                exists: () => value !== undefined && value !== null,
-                forEach(callback) {
-                    if (!value || typeof value !== 'object') return false;
-                    for (const [key, childValue] of Object.entries(value)) {
-                        if (callback(localSnapshot(`${path}/${key}`, childValue)) === true) return true;
-                    }
-                    return false;
-                }
-            };
-        }
-
-        function localPersist() {
-            localStorage.setItem(LOCAL_DATA_KEY, JSON.stringify(localDatabase));
-        }
-
-        function localNotify(changedPath) {
-            for (const listener of localDatabaseListeners) {
-                const overlaps = listener.path === changedPath || listener.path.startsWith(`${changedPath}/`) || changedPath.startsWith(`${listener.path}/`);
-                if (overlaps && listener.event === 'value') listener.callback(localSnapshot(listener.path));
-            }
-        }
-
-        const db = {
-            ref(path = '') {
-                const normalizedPath = localPathParts(path).join('/');
-                const parts = localPathParts(normalizedPath);
-                const reference = {
-                    key: parts[parts.length - 1] || null,
-                    once: () => Promise.resolve(localSnapshot(normalizedPath)),
-                    on(event, callback) {
-                        const listener = { path: normalizedPath, event, callback };
-                        localDatabaseListeners.add(listener);
-                        if (event === 'value') callback(localSnapshot(normalizedPath));
-                        else if (event === 'child_added') localSnapshot(normalizedPath).forEach(callback);
-                        return callback;
-                    },
-                    off(event, callback) {
-                        for (const listener of localDatabaseListeners) {
-                            if (listener.path === normalizedPath && (!event || listener.event === event) && (!callback || listener.callback === callback)) {
-                                localDatabaseListeners.delete(listener);
-                            }
-                        }
-                    },
-                    set(value) {
-                        try {
-                            let target = localDatabase;
-                            for (const part of parts.slice(0, -1)) target = target[part] ||= {};
-                            if (parts.length) target[parts[parts.length - 1]] = value;
-                            else localDatabase = value;
-                            localPersist();
-                            localNotify(normalizedPath);
-                            return Promise.resolve();
-                        } catch (error) {
-                            return Promise.reject(error);
-                        }
-                    },
-                    update(value) {
-                        return reference.set({ ...(localRead(normalizedPath) || {}), ...value });
-                    },
-                    remove() {
-                        if (!parts.length) return reference.set({});
-                        const parent = localRead(parts.slice(0, -1).join('/'));
-                        if (parent) delete parent[parts[parts.length - 1]];
-                        try {
-                            localPersist();
-                            localNotify(normalizedPath);
-                            return Promise.resolve();
-                        } catch (error) {
-                            return Promise.reject(error);
-                        }
-                    },
-                    push(value) {
-                        const childKey = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-                        const child = db.ref(normalizedPath ? `${normalizedPath}/${childKey}` : childKey);
-                        return value === undefined ? child : child.set(value).then(() => child);
-                    }
-                };
-                return reference;
-            }
-        };
+        const db = firebase.database();
         const planeFeed = db.ref('planeNumbers');
         let planeAuth = null;
         let planeExpiryTimer = null;
@@ -3221,24 +3124,32 @@
             },
             planeRingSpeedSeconds: 4
         };
-        const SITE_SETTINGS_STORAGE_KEY = 'darkstorm_site_settings';
-        const WALLET_STORAGE_KEY = 'darkstorm_wallet';
+        // Site settings and wallet now sync through Firebase.
 
-        function loadLocalSiteSettings() {
-            try {
-                const saved = JSON.parse(localStorage.getItem(SITE_SETTINGS_STORAGE_KEY) || 'null');
-                if (!saved || typeof saved !== 'object') return JSON.parse(JSON.stringify(DEFAULT_SITE_SETTINGS));
-                return {
-                    servers: Array.isArray(saved.servers) && saved.servers.length ? saved.servers : DEFAULT_SITE_SETTINGS.servers,
-                    images: { ...DEFAULT_SITE_SETTINGS.images, ...(saved.images || {}) },
-                    planeRingSpeedSeconds: normalizePlaneRingSpeed(saved.planeRingSpeedSeconds)
-                };
-            } catch (error) {
-                return JSON.parse(JSON.stringify(DEFAULT_SITE_SETTINGS));
-            }
+        function normalizeSiteSettings(saved) {
+            if (!saved || typeof saved !== 'object') return JSON.parse(JSON.stringify(DEFAULT_SITE_SETTINGS));
+            return {
+                servers: Array.isArray(saved.servers) && saved.servers.length ? saved.servers : DEFAULT_SITE_SETTINGS.servers,
+                images: { ...DEFAULT_SITE_SETTINGS.images, ...(saved.images || {}) },
+                planeRingSpeedSeconds: normalizePlaneRingSpeed(saved.planeRingSpeedSeconds)
+            };
         }
 
-        let siteSettings = loadLocalSiteSettings();
+        function loadDefaultSiteSettings() {
+            return JSON.parse(JSON.stringify(DEFAULT_SITE_SETTINGS));
+        }
+
+        let siteSettings = loadDefaultSiteSettings();
+
+        db.ref('settings/site').on('value', (snap) => {
+            if (snap.exists()) {
+                siteSettings = normalizeSiteSettings(snap.val());
+                try { applySiteImages(); } catch (e) {}
+                try { renderSiteServers(); } catch (e) {}
+            } else {
+                db.ref('settings/site').set(siteSettings).catch(() => {});
+            }
+        });
         let selAv = '',
             curItem = null;
 
@@ -3613,27 +3524,31 @@
             { name:'ساعتين', price:1000, minutes:120 }
         ];
         for (const [product, packages] of Object.entries({ plane: PLANE_PACKAGES, apple: APPLE_PACKAGES })) {
-            if (!localRead(`products/${product}`)) {
-                const defaults = Object.fromEntries(packages.map((item, index) => [`default-${index + 1}`, item]));
-                db.ref(`products/${product}`).set(defaults).catch(() => {});
-            }
+            db.ref(`products/${product}`).once('value').then(snap => {
+                if (!snap.exists()) {
+                    const defaults = Object.fromEntries(packages.map((item, index) => [`default-${index + 1}`, item]));
+                    db.ref(`products/${product}`).set(defaults).catch(() => {});
+                }
+            }).catch(() => {});
         }
         let PLANE_LOGO_IMAGE = DEFAULT_SITE_SETTINGS.images.planeLogo;
         let APPLE_LOGO_IMAGE = DEFAULT_SITE_SETTINGS.images.appleLogo;
-        // صور كروت الباقات محلية وثابتة؛ لا يتم قراءتها أو تحديثها من Firebase.
+        // صور كروت الباقات تُقرأ من إعدادات الموقع المحفوظة في Firebase.
         let PLANE_CARD_IMAGE = DEFAULT_SITE_SETTINGS.images.planeCard;
         let APPLE_CARD_IMAGE = DEFAULT_SITE_SETTINGS.images.appleCard;
         applySiteImages();
         const DEFAULT_WALLET = '01069311729';
         const walletDisplay = document.getElementById('wallet-num');
         function loadWallet() {
-            let wallet = DEFAULT_WALLET;
-            try {
-                wallet = localStorage.getItem(WALLET_STORAGE_KEY) || DEFAULT_WALLET;
-            } catch (error) {
-                console.error('تعذر تحميل رقم المحفظة من التخزين المحلي:', error);
-            }
+            const wallet = DEFAULT_WALLET;
             if (walletDisplay) walletDisplay.innerText = wallet;
+            db.ref('settings/wallet').on('value', (snap) => {
+                const value = snap.exists() ? snap.val() : DEFAULT_WALLET;
+                if (walletDisplay) walletDisplay.innerText = value || DEFAULT_WALLET;
+            });
+            db.ref('settings/wallet').once('value').then((snap) => {
+                if (!snap.exists()) db.ref('settings/wallet').set(DEFAULT_WALLET).catch(() => {});
+            }).catch(() => {});
         }
         loadWallet();
         let selectedProduct = null;
@@ -3706,7 +3621,6 @@
             showPage('pg-pay');
             document.getElementById('selected-package').innerText = `${selectedProduct === 'plane' ? '✈️ الطيارة' : '🍎 التفاحة'} · ${p.name} · ${p.price} EGP`;
             document.getElementById('order-state').classList.add('hidden');
-            loadWallet();
         }
         function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
         function readOrderImage(file) {
@@ -3748,12 +3662,31 @@
             try {
                 const image = await readOrderImage(f);
                 const payload = { tg, num, item:curItem.n, price:curItem.p, minutes:curItem.minutes, product:curItem.product, screenshot:image };
-                await db.ref('orders').push({...payload, img:image, sentToTelegram:false, status:'pending', createdAt:Date.now()});
+                const orderRef = await db.ref('orders').push({ ...payload, sentToTelegram: false, status: 'pending', createdAt: Date.now() });
+                let telegramSent = false;
+                try {
+                    const response = await fetch('/api/order', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (response.ok) {
+                        telegramSent = true;
+                        await orderRef.update({ sentToTelegram: true });
+                    } else {
+                        const result = await response.json().catch(() => ({}));
+                        console.warn('Telegram order notification failed:', result.error || response.status);
+                    }
+                } catch (error) {
+                    console.warn('Telegram order notification failed:', error);
+                }
                 hideLoader();
                 document.getElementById('order-state').classList.remove('hidden');
-                document.getElementById('order-state').innerHTML = '✅ تم حفظ الطلب، انتظر تفعيل الأدمن';
+                document.getElementById('order-state').innerHTML = telegramSent
+                    ? '✅ تم حفظ الطلب وإرساله إلى تيليجرام، انتظر تفعيل الأدمن'
+                    : '✅ تم حفظ الطلب، انتظر تفعيل الأدمن';
                 if (sendBtn) sendBtn.innerText = '✅ تم حفظ الطلب';
-                toast('✅ تم حفظ الطلب، انتظر تفعيل الأدمن');
+                toast(telegramSent ? '✅ تم حفظ الطلب وإرساله إلى تيليجرام' : '✅ تم حفظ الطلب، انتظر تفعيل الأدمن');
             } catch (err) {
                 hideLoader();
                 if (sendBtn) { sendBtn.disabled = false; sendBtn.innerText = '✅ إرسال الطلب'; }
@@ -3913,8 +3846,14 @@
                     if (file) images[setting] = await readCompressedSiteImage(file);
                 }
                 const next = { servers, images, planeRingSpeedSeconds: ringSpeed };
-                localStorage.setItem(SITE_SETTINGS_STORAGE_KEY, JSON.stringify(next));
-                siteSettings = next;
+                try {
+                    await db.ref('settings/site').set(next);
+                    siteSettings = next;
+                } catch (error) {
+                    console.error(error);
+                    toast('❌ تعذر حفظ إعدادات الموقع في Firebase');
+                    return;
+                }
                 restorePlaneSession();
                 renderSiteServers();
                 applySiteImages();
@@ -3992,7 +3931,10 @@
         }
 
         function delKey(id) {
-            if (confirm('حذف الكود؟')) db.ref('keys/' + id).remove();
+            if (!confirm('حذف الكود؟')) return;
+            db.ref('keys/' + id).remove()
+                .then(() => toast('✅ تم حذف الكود'))
+                .catch(() => toast('❌ تعذر حذف الكود'));
         }
 
         async function copyCode(code, button) {
@@ -4075,7 +4017,10 @@
         }
 
         function delProd(id) {
-            if (confirm('حذف المنتج؟')) db.ref('products/' + id).remove().then(loadProds);
+            if (!confirm('حذف المنتج؟')) return;
+            db.ref('products/' + id).remove()
+                .then(() => { toast('✅ تم حذف المنتج'); loadProds(); })
+                .catch(() => toast('❌ تعذر حذف المنتج'));
         }
 
         function loadOrders() {
@@ -4087,7 +4032,7 @@
                 snap.forEach(c => {
                     const o = c.val();
                     const approved = o.status === 'approved';
-                    list.innerHTML += `<div class="order-card"><div style="font-family:Orbitron,monospace;font-size:.6rem;color:var(--muted);letter-spacing:2px;margin-bottom:8px;">ORDER</div><div class="order-meta">📦 <b style="color:var(--gold2);">${escapeHtml(o.product === 'plane' ? '✈️ الطيارة' : '🍎 التفاحة')} · ${escapeHtml(o.item)}</b><br>💰 ${o.price} EGP · ${o.minutes} دقيقة<br>👤 <b>@${escapeHtml(o.tg)}</b><br>📞 ${escapeHtml(o.num)}</div><img src="${o.img}" onclick="window.open(this.src)">${approved ? `<div class="order-state" style="padding:10px;margin-top:10px">تمت الموافقة<br><span class="key-code-row" style="justify-content:center;margin-top:6px;"><b>${escapeHtml(o.activationCode || '')}</b><button type="button" class="copy-key-btn" onclick="copyCode('${escapeHtml(o.activationCode || '')}', this)" title="نسخ الكود" aria-label="نسخ الكود">⧉</button></span></div>` : `<button onclick="approveOrder('${c.key}')" class="btn-approve">✅ موافقة وتوليد كود</button>`}<button onclick="delOrder('${c.key}')" class="btn-del" style="width:100%;margin-top:10px;">🗑 حذف الطلب</button></div>`;
+                    list.innerHTML += `<div class="order-card"><div style="font-family:Orbitron,monospace;font-size:.6rem;color:var(--muted);letter-spacing:2px;margin-bottom:8px;">ORDER</div><div class="order-meta">📦 <b style="color:var(--gold2);">${escapeHtml(o.product === 'plane' ? '✈️ الطيارة' : '🍎 التفاحة')} · ${escapeHtml(o.item)}</b><br>💰 ${o.price} EGP · ${o.minutes} دقيقة<br>👤 <b>@${escapeHtml(o.tg)}</b><br>📞 ${escapeHtml(o.num)}</div><img src="${o.screenshot || o.img}" onclick="window.open(this.src)">${approved ? `<div class="order-state" style="padding:10px;margin-top:10px">تمت الموافقة<br><span class="key-code-row" style="justify-content:center;margin-top:6px;"><b>${escapeHtml(o.activationCode || '')}</b><button type="button" class="copy-key-btn" onclick="copyCode('${escapeHtml(o.activationCode || '')}', this)" title="نسخ الكود" aria-label="نسخ الكود">⧉</button></span></div>` : `<button onclick="approveOrder('${c.key}')" class="btn-approve">✅ موافقة وتوليد كود</button>`}<button onclick="delOrder('${c.key}')" class="btn-del" style="width:100%;margin-top:10px;">🗑 حذف الطلب</button></div>`;
                 });
                 if (!snap.exists()) list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">لا توجد طلبات</div>';
             });
@@ -4102,24 +4047,56 @@
             await serverTimeReady;
             const expiry = new Date(serverNow() + Number(o.minutes || 30) * 60000).toISOString();
             await db.ref('keys/' + code).set({ users:1, expiry, product:o.product || 'apple', telegram:o.tg, orderId });
-            await db.ref('orders/' + orderId).update({ status:'approved', activationCode:code, expiry });
-            toast('✅ تم توليد الكود: ' + code);
+            await db.ref('orders/' + orderId).update({ status: 'approved', activationCode: code, expiry });
+            let telegramSent = false;
+            try {
+                const response = await fetch('/api/approve', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        orderId,
+                        code,
+                        expiry,
+                        tg: o.tg,
+                        item: o.item,
+                        price: o.price,
+                        minutes: o.minutes,
+                        product: o.product || 'apple',
+                        num: o.num
+                    })
+                });
+                if (response.ok) {
+                    telegramSent = true;
+                    await db.ref('orders/' + orderId).update({ telegramSent: true });
+                } else {
+                    const result = await response.json().catch(() => ({}));
+                    console.warn('Telegram approval notification failed:', result.error || response.status);
+                    toast('⚠️ تم توليد الكود، لكن تعذر إرساله إلى تيليجرام');
+                }
+            } catch (error) {
+                console.warn('Telegram approval notification failed:', error);
+                toast('⚠️ تم توليد الكود، لكن تعذر إرساله إلى تيليجرام');
+            }
+            toast('✅ تم توليد الكود: ' + code + (telegramSent ? ' (أُرسل إلى تيليجرام)' : ''));
         }
         function delOrder(id) {
-            db.ref('orders/' + id).remove();
+            if (!confirm('حذف الطلب؟')) return;
+            db.ref('orders/' + id).remove()
+                .then(() => toast('✅ تم حذف الطلب'))
+                .catch(() => toast('❌ تعذر حذف الطلب'));
         }
 
-        function updateWallet() {
+        async function updateWallet() {
             const w = document.getElementById('new-wallet').value.trim();
             const normalized = w.replace(/[\s()+-]/g, '');
             if (!/^\d{8,15}$/.test(normalized)) return toast('❌ أدخل رقم محفظة صحيحًا من 8 إلى 15 رقمًا');
             try {
-                localStorage.setItem(WALLET_STORAGE_KEY, w);
+                await db.ref('settings/wallet').set(w);
                 if (walletDisplay) walletDisplay.innerText = w;
                 toast('✅ تم التحديث');
             } catch (error) {
-                console.error('تعذر حفظ رقم المحفظة محليًا:', error);
-                toast('❌ تعذر حفظ رقم المحفظة على هذا المتصفح');
+                console.error('تعذر حفظ رقم المحفظة:', error);
+                toast('❌ تعذر حفظ رقم المحفظة');
             }
         }
 
@@ -4344,8 +4321,8 @@
 
   // ---------- Init (initializeLogic + setupRotatingImage) ----------
   // The background is an animated GIF, so it loops natively on iPhone and Android.
-  firebase.initializeApp({ databaseURL: FIREBASE_DB_URL });
-  ref = firebase.database().ref('pre');
+  const planeApp = firebase.apps.find(app => app.name === 'plane') || firebase.initializeApp({ databaseURL: FIREBASE_DB_URL }, 'plane');
+  ref = planeApp.database().ref('pre');
   attachListener();
 })();
 

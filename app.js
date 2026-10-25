@@ -107,7 +107,7 @@
 
   // ---------- Init (initializeLogic + setupRotatingImage) ----------
   // The background is an animated GIF, so it loops natively on iPhone and Android.
-  firebase.initializeApp({ databaseURL: FIREBASE_DB_URL });
-  ref = firebase.database().ref('pre');
+  firebase.initializeApp({ databaseURL: FIREBASE_DB_URL }, 'plane');
+  ref = firebase.app('plane').database().ref('pre');
   attachListener();
 })();
