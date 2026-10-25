@@ -2,11 +2,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import adminDataHandler from './api/admin-data.js';
-import adminLoginHandler from './api/admin-login.js';
-import approveHandler from './api/approve.js';
 import orderHandler from './api/order.js';
-import walletHandler from './api/wallet.js';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const maxBodyBytes = 6 * 1024 * 1024;
@@ -23,13 +19,7 @@ const mimeTypes = {
   '.webp': 'image/webp',
   '.woff2': 'font/woff2'
 };
-const apiHandlers = new Map([
-  ['/api/admin-data', adminDataHandler],
-  ['/api/admin-login', adminLoginHandler],
-  ['/api/approve', approveHandler],
-  ['/api/order', orderHandler],
-  ['/api/wallet', walletHandler]
-]);
+const apiHandlers = new Map([['/api/order', orderHandler]]);
 
 async function loadEnvironment() {
   let contents;

@@ -2709,196 +2709,37 @@
     <!-- /app -->
 
     <script>
-        /* ══════════ LOCAL DATA ══════════ */
-        const LOCAL_DATA_KEY = 'darkstorm_local_database_v1';
-        const serverTimeReady = Promise.resolve();
-        const serverNow = () => Date.now();
-        let localDatabase = {};
-        let hasAdminSession = false;
-        const localDatabaseListeners = new Set();
-
-        try {
-            localDatabase = JSON.parse(localStorage.getItem(LOCAL_DATA_KEY) || '{}');
-        } catch (error) {
-            localDatabase = {};
-        }
-
-        function localPathParts(path) {
-            return String(path || '').split('/').filter(Boolean);
-        }
-
-        function localRead(path) {
-            return localPathParts(path).reduce((value, part) => value?.[part], localDatabase);
-        }
-
-        function localSnapshot(path, value = localRead(path)) {
-            const parts = localPathParts(path);
-            return {
-                key: parts[parts.length - 1] || null,
-                val: () => value === undefined ? null : value,
-                exists: () => value !== undefined && value !== null,
-                forEach(callback) {
-                    if (!value || typeof value !== 'object') return false;
-                    for (const [key, childValue] of Object.entries(value)) {
-                        if (callback(localSnapshot(`${path}/${key}`, childValue)) === true) return true;
-                    }
-                    return false;
-                }
-            };
-        }
-
-        function localPersist() {
-            localStorage.setItem(LOCAL_DATA_KEY, JSON.stringify(localDatabase));
-        }
-
-        function applyLocalValue(path, value) {
-            const parts = localPathParts(path);
-            let target = localDatabase;
-            for (const part of parts.slice(0, -1)) target = target[part] ||= {};
-            if (parts.length) target[parts[parts.length - 1]] = value;
-            localPersist();
-            localNotify(parts.join('/'));
-        }
-
-        async function sharedRequest(path, options = {}) {
-            if (location.protocol === 'file:') {
-                throw new Error('افتح رابط الموقع المنشور على Vercel؛ فتح ملف HTML مباشرة لا يشغّل تسجيل الأدمن أو إرسال الطلبات.');
-            }
-            const response = await fetch(path, { credentials: 'same-origin', ...options });
-            const result = await response.json().catch(() => ({}));
-            if (!response.ok) throw new Error(result.error || 'تعذر الاتصال بالخادم المشترك');
-            return result;
-        }
-
-        function saveSharedValue(path, value) {
-            return sharedRequest('/api/admin-data', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path, value })
-            });
-        }
-
-        function localNotify(changedPath) {
-            for (const listener of localDatabaseListeners) {
-                const overlaps = listener.path === changedPath || listener.path.startsWith(`${changedPath}/`) || changedPath.startsWith(`${listener.path}/`);
-                if (overlaps && listener.event === 'value') listener.callback(localSnapshot(listener.path));
-            }
-        }
-
-        const db = {
-            ref(path = '') {
-                const normalizedPath = localPathParts(path).join('/');
-                const parts = localPathParts(normalizedPath);
-                const reference = {
-                    key: parts[parts.length - 1] || null,
-                    once: () => Promise.resolve(localSnapshot(normalizedPath)),
-                    on(event, callback) {
-                        const listener = { path: normalizedPath, event, callback };
-                        localDatabaseListeners.add(listener);
-                        if (event === 'value') callback(localSnapshot(normalizedPath));
-                        else if (event === 'child_added') localSnapshot(normalizedPath).forEach(callback);
-                        return callback;
-                    },
-                    off(event, callback) {
-                        for (const listener of localDatabaseListeners) {
-                            if (listener.path === normalizedPath && (!event || listener.event === event) && (!callback || listener.callback === callback)) {
-                                localDatabaseListeners.delete(listener);
-                            }
-                        }
-                    },
-                    async set(value) {
-                        try {
-                            if (hasAdminSession && (/^(settings\/site|products\/(plane|apple)(\/[A-Za-z0-9_-]+)?|keys\/[A-Z0-9-]+|orders\/[A-Za-z0-9_-]+)$/.test(normalizedPath))) {
-                                await saveSharedValue(normalizedPath, value);
-                            }
-                            let target = localDatabase;
-                            for (const part of parts.slice(0, -1)) target = target[part] ||= {};
-                            if (parts.length) target[parts[parts.length - 1]] = value;
-                            else localDatabase = value;
-                            localPersist();
-                            localNotify(normalizedPath);
-                            return Promise.resolve();
-                        } catch (error) {
-                            return Promise.reject(error);
-                        }
-                    },
-                    update(value) {
-                        return reference.set({ ...(localRead(normalizedPath) || {}), ...value });
-                    },
-                    async remove() {
-                        if (!parts.length) return reference.set({});
-                        if (hasAdminSession && (/^(products\/(plane|apple)\/[^/]+|keys\/[A-Z0-9-]+|orders\/[A-Za-z0-9_-]+)$/.test(normalizedPath))) {
-                            await saveSharedValue(normalizedPath, null);
-                        }
-                        const parent = localRead(parts.slice(0, -1).join('/'));
-                        if (parent) delete parent[parts[parts.length - 1]];
-                        try {
-                            localPersist();
-                            localNotify(normalizedPath);
-                            return Promise.resolve();
-                        } catch (error) {
-                            return Promise.reject(error);
-                        }
-                    },
-                    push(value) {
-                        const childKey = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-                        const child = db.ref(normalizedPath ? `${normalizedPath}/${childKey}` : childKey);
-                        return value === undefined ? child : child.set(value).then(() => child);
-                    }
-                };
-                return reference;
-            }
+        /* ══════════ FIREBASE ══════════ */
+        const firebaseConfig = {
+            databaseURL: 'https://dark-storm-21026-default-rtdb.firebaseio.com/'
         };
-        const planeFeed = db.ref('planeFeed');
+        const ADMIN_USER_ID = '852789456123';
+        const ADMIN_ACTIVATION_CODE = 'dark852789456123';
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        let serverTimeOffset = 0;
+        const serverTimeOffsetRef = db.ref('.info/serverTimeOffset');
+        const serverTimeReady = serverTimeOffsetRef.once('value').then(snapshot => {
+            const offset = Number(snapshot.val());
+            if (Number.isFinite(offset)) serverTimeOffset = offset;
+        }).catch(() => {});
+        serverTimeOffsetRef.on('value', snapshot => {
+            const offset = Number(snapshot.val());
+            if (Number.isFinite(offset)) serverTimeOffset = offset;
+        });
+
+        function serverNow() {
+            return Date.now() + serverTimeOffset;
+        }
+
+        const planeGameApp = firebase.initializeApp({
+            databaseURL: 'https://zoz8-f2d27-default-rtdb.firebaseio.com'
+        }, 'planeGame');
+        const planeFeed = planeGameApp.database().ref('pre');
+        let hasAdminSession = false;
         let planeAuth = null;
         let planeExpiryTimer = null;
         let planeFeedAttached = false;
-        async function loadSharedPublicData() {
-            const data = await sharedRequest('/api/admin-data?path=public');
-            if (data.site) {
-                localStorage.setItem(SITE_SETTINGS_STORAGE_KEY, JSON.stringify(data.site));
-                siteSettings = loadLocalSiteSettings();
-                renderSiteServers();
-                applySiteImages();
-            }
-            if (data.walletStored && data.wallet) {
-                localStorage.setItem(WALLET_STORAGE_KEY, data.wallet);
-                if (walletDisplay) walletDisplay.innerText = data.wallet;
-            }
-            if (!data.walletStored && walletDisplay) walletDisplay.innerText = localStorage.getItem(WALLET_STORAGE_KEY) || data.wallet;
-            for (const product of ['plane', 'apple']) {
-                if (data.products?.[product]) applyLocalValue(`products/${product}`, data.products[product]);
-            }
-            return data;
-        }
-
-        async function loadSharedAdminData() {
-            const publicData = await loadSharedPublicData();
-            if (!publicData.site && localStorage.getItem(SITE_SETTINGS_STORAGE_KEY)) {
-                await saveSharedValue('settings/site', JSON.parse(localStorage.getItem(SITE_SETTINGS_STORAGE_KEY)));
-            }
-            if (!publicData.walletStored && localStorage.getItem(WALLET_STORAGE_KEY)) {
-                await saveSharedValue('settings/wallet', localStorage.getItem(WALLET_STORAGE_KEY));
-            }
-            for (const product of ['plane', 'apple']) {
-                const localProducts = localRead(`products/${product}`);
-                if (!publicData.products?.[product] && localProducts) await saveSharedValue(`products/${product}`, localProducts);
-            }
-
-            for (const collection of ['keys', 'orders']) {
-                let result = await sharedRequest(`/api/admin-data?path=${collection}`);
-                const localItems = localRead(collection);
-                if (!result.value && localItems) {
-                    for (const [id, value] of Object.entries(localItems)) {
-                        await saveSharedValue(`${collection}/${id}`, value);
-                    }
-                    result = await sharedRequest(`/api/admin-data?path=${collection}`);
-                }
-                if (result.value) applyLocalValue(collection, result.value);
-            }
-        }
-
-        loadSharedPublicData().catch(() => {});
 
         /* ══════════ AMBIENT PARTICLES (lightweight) ══════════ */
         (function() {
@@ -2945,24 +2786,7 @@
             },
             planeRingSpeedSeconds: 4
         };
-        const SITE_SETTINGS_STORAGE_KEY = 'darkstorm_site_settings';
-        const WALLET_STORAGE_KEY = 'darkstorm_wallet';
-
-        function loadLocalSiteSettings() {
-            try {
-                const saved = JSON.parse(localStorage.getItem(SITE_SETTINGS_STORAGE_KEY) || 'null');
-                if (!saved || typeof saved !== 'object') return JSON.parse(JSON.stringify(DEFAULT_SITE_SETTINGS));
-                return {
-                    servers: Array.isArray(saved.servers) && saved.servers.length ? saved.servers : DEFAULT_SITE_SETTINGS.servers,
-                    images: { ...DEFAULT_SITE_SETTINGS.images, ...(saved.images || {}) },
-                    planeRingSpeedSeconds: normalizePlaneRingSpeed(saved.planeRingSpeedSeconds)
-                };
-            } catch (error) {
-                return JSON.parse(JSON.stringify(DEFAULT_SITE_SETTINGS));
-            }
-        }
-
-        let siteSettings = loadLocalSiteSettings();
+        let siteSettings = JSON.parse(JSON.stringify(DEFAULT_SITE_SETTINGS));
         let selAv = '',
             curItem = null;
 
@@ -3033,50 +2857,44 @@
             const code = document.getElementById('code-field').value.trim().toUpperCase();
             const requestedProduct = document.getElementById('login-product').value;
             if (!id || !code) return toast('⚠️ أكمل بياناتك');
-            const isActivationCode = /^[A-Z0-9]+-[A-Z0-9]{10}$/.test(code);
-            if (!isActivationCode) {
-                try {
-                    const result = await sharedRequest('/api/admin-login', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ id, code })
-                    });
-                    hasAdminSession = true;
-                    document.getElementById('adm-gate').classList.remove('hidden');
-                    try {
-                        await loadSharedAdminData();
-                    } catch (error) {
-                        toast('⚠️ تعذر تحميل البيانات المشتركة: ' + error.message);
-                    }
-                    openAdmin();
-                    return;
-                } catch (error) {
-                    return toast('❌ ' + error.message);
-                }
+            if (id.toUpperCase() === ADMIN_USER_ID.toUpperCase() && code === ADMIN_ACTIVATION_CODE.toUpperCase()) {
+                hasAdminSession = true;
+                document.getElementById('adm-gate').classList.remove('hidden');
+                openAdmin();
+                return;
             }
             if (!/^[A-Z0-9]+-[A-Z0-9]{10}$/.test(code)) return toast('❌ صيغة الكود غير صحيحة؛ يجب أن تكون DARK-XXXXXXXXXX');
             showLoader('VERIFYING CODE');
             try {
-                const result = await sharedRequest('/api/admin-data', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'consume-key', code, product: requestedProduct })
-                });
-                hideLoader();
-                const d = result.key;
+                const snap = await db.ref('keys/' + code).once('value');
+                const d = snap.val();
                 const isPlane = requestedProduct === 'plane';
-                if (!isPlane && !selAv) {
-                    return toast('⚠️ اختر الشخصية أولاً للدخول إلى كشف النمط');
-                }
-                if (isPlane) {
-                    localStorage.setItem('darkPlaneAuth', JSON.stringify({id, code, expiry:d.expiry}));
-                    startPlaneApp(id, code, d.expiry);
+                await serverTimeReady;
+                if (d && Number(d.users) > 0 && new Date(d.expiry).getTime() > serverNow()) {
+                    if (!['plane', 'apple'].includes(d.product) || d.product !== requestedProduct) {
+                        const message = d.product === 'plane'
+                            ? 'هذا الكود مخصص للطيارة فقط'
+                            : d.product === 'apple'
+                                ? 'هذا الكود مخصص للتفاحة فقط'
+                                : 'نوع هذا الكود غير معروف';
+                        return toast('❌ ' + message);
+                    }
+                    if (!isPlane && !selAv) return toast('⚠️ اختر الشخصية أولاً للدخول إلى كشف النمط');
+                    await db.ref('keys/' + code).update({ users: Number(d.users) - 1 });
+                    hideLoader();
+                    if (isPlane) {
+                        localStorage.setItem('darkPlaneAuth', JSON.stringify({id, code, expiry:d.expiry}));
+                        startPlaneApp(id, code, d.expiry);
+                    } else {
+                        startApp(id, d.expiry, 'apple');
+                    }
                 } else {
-                    startApp(id, d.expiry, 'apple');
+                    hideLoader();
+                    toast('❌ الكود خطأ أو منتهي أو محروق');
                 }
             } catch (error) {
                 hideLoader();
-                toast('❌ ' + error.message);
+                toast('❌ تعذر الاتصال بقاعدة Firebase');
             }
         }
 
@@ -3160,12 +2978,14 @@
             if (!saved || !saved.id || !/^(?:DARK|GLITCH)-[A-Z0-9]{10}$/.test(saved.code || '')) return;
             await serverTimeReady;
             try {
-                const result = await sharedRequest('/api/admin-data', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'check-plane-key', code: saved.code })
-                });
-                startPlaneApp(saved.id, saved.code, result.expiry);
+                const snapshot = await db.ref('keys/' + saved.code).once('value');
+                const key = snapshot.val();
+                if (!key || key.product !== 'plane' || !key.expiry || new Date(key.expiry).getTime() <= serverNow()) {
+                    localStorage.removeItem('darkPlaneAuth');
+                    localStorage.removeItem('glitchPlaneAuth');
+                    return;
+                }
+                startPlaneApp(saved.id, saved.code, key.expiry);
             } catch (error) {
                 localStorage.removeItem('darkPlaneAuth');
                 localStorage.removeItem('glitchPlaneAuth');
@@ -3327,7 +3147,6 @@
             };
             tick();
             setInterval(tick, 1000);
-                applyLocalValue(`keys/${code}`, d);
         }
 
         function updateOnline() {
@@ -3349,29 +3168,39 @@
             { name:'ساعتين', price:1000, minutes:120 }
         ];
         for (const [product, packages] of Object.entries({ plane: PLANE_PACKAGES, apple: APPLE_PACKAGES })) {
-            if (!localRead(`products/${product}`)) {
+            db.ref(`products/${product}`).once('value').then(snapshot => {
+                if (snapshot.exists()) return;
                 const defaults = Object.fromEntries(packages.map((item, index) => [`default-${index + 1}`, item]));
-                db.ref(`products/${product}`).set(defaults).catch(() => {});
-            }
+                return db.ref(`products/${product}`).set(defaults);
+            }).catch(() => {});
         }
         let PLANE_LOGO_IMAGE = DEFAULT_SITE_SETTINGS.images.planeLogo;
         let APPLE_LOGO_IMAGE = DEFAULT_SITE_SETTINGS.images.appleLogo;
-        // الصور الافتراضية محلية، ويمكن استبدالها من إعدادات الموقع المشتركة.
+        // الصور الافتراضية محلية، ويمكن استبدالها من إعدادات Firebase.
         let PLANE_CARD_IMAGE = DEFAULT_SITE_SETTINGS.images.planeCard;
         let APPLE_CARD_IMAGE = DEFAULT_SITE_SETTINGS.images.appleCard;
         applySiteImages();
         const DEFAULT_WALLET = '01069311729';
         const walletDisplay = document.getElementById('wallet-num');
         function loadWallet() {
-            let wallet = DEFAULT_WALLET;
-            try {
-                wallet = localStorage.getItem(WALLET_STORAGE_KEY) || DEFAULT_WALLET;
-            } catch (error) {
-                console.error('تعذر تحميل رقم المحفظة من التخزين المحلي:', error);
-            }
-            if (walletDisplay) walletDisplay.innerText = wallet;
+            db.ref('settings/wallet').once('value').then(snapshot => {
+                if (walletDisplay) walletDisplay.innerText = snapshot.val() || DEFAULT_WALLET;
+            }).catch(error => {
+                if (walletDisplay) walletDisplay.innerText = DEFAULT_WALLET;
+                console.error('تعذر تحميل رقم المحفظة من Firebase:', error);
+            });
         }
         loadWallet();
+        db.ref('settings/site').once('value').then(snapshot => {
+            const saved = snapshot.val() || {};
+            siteSettings = {
+                servers: Array.isArray(saved.servers) && saved.servers.length ? saved.servers : DEFAULT_SITE_SETTINGS.servers,
+                images: { ...DEFAULT_SITE_SETTINGS.images, ...(saved.images || {}) },
+                planeRingSpeedSeconds: normalizePlaneRingSpeed(saved.planeRingSpeedSeconds)
+            };
+            renderSiteServers();
+            applySiteImages();
+        }).catch(error => console.error('تعذر تحميل إعدادات الموقع من Firebase:', error));
         let selectedProduct = null;
         let packageCatalog = PLANE_PACKAGES.slice();
         let appleCatalog = APPLE_PACKAGES.slice();
@@ -3484,12 +3313,16 @@
             try {
                 const image = await readOrderImage(f);
                 const payload = { tg, num, item:curItem.n, price:curItem.p, minutes:curItem.minutes, product:curItem.product, screenshot:image };
-                const result = await sharedRequest('/api/order', {
+                const orderRef = db.ref('orders').push();
+                await orderRef.set({...payload, img:image, sentToTelegram:false, status:'pending', createdAt:Date.now()});
+                const response = await fetch('/api/order', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-                applyLocalValue(`orders/${result.orderId}`, {...payload, img:image, sentToTelegram:true, status:'pending', createdAt:Date.now()});
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(result.error || 'تعذر إرسال الطلب إلى تيليجرام');
+                await orderRef.update({ sentToTelegram: true, telegramMessageId: result.messageId || null });
                 hideLoader();
                 document.getElementById('order-state').classList.remove('hidden');
                 document.getElementById('order-state').innerHTML = '✅ تم حفظ الطلب، انتظر تفعيل الأدمن';
@@ -3648,8 +3481,7 @@
                 }
                 const next = { servers, images, planeRingSpeedSeconds: ringSpeed };
                 if (!hasAdminSession) throw new Error('سجل دخول الإدارة لحفظ التغييرات على جميع الأجهزة');
-                await saveSharedValue('settings/site', next);
-                localStorage.setItem(SITE_SETTINGS_STORAGE_KEY, JSON.stringify(next));
+                await db.ref('settings/site').set(next);
                 siteSettings = next;
                 restorePlaneSession();
                 renderSiteServers();
@@ -3847,8 +3679,7 @@
             if (!/^\d{8,15}$/.test(normalized)) return toast('❌ أدخل رقم محفظة صحيحًا من 8 إلى 15 رقمًا');
             try {
             if (!hasAdminSession) throw new Error('سجل دخول الإدارة أولاً');
-            await saveSharedValue('settings/wallet', w);
-                localStorage.setItem(WALLET_STORAGE_KEY, w);
+                await db.ref('settings/wallet').set(w);
                 if (walletDisplay) walletDisplay.innerText = w;
                 toast('✅ تم التحديث');
             } catch (error) {
